@@ -37,9 +37,10 @@ Run it with:
 from __future__ import annotations
 
 import os
+import sqlite3
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db, engine
@@ -68,6 +69,29 @@ app = FastAPI(
 db.init_db()
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+
+
+@app.exception_handler(sqlite3.Error)
+def sqlite_error_handler(request: Request, exc: sqlite3.Error):
+    """
+    Turn a database failure into something the user can act on.
+
+    `db()` now recreates a missing schema on its own, so this should be rare —
+    but "Request failed (500)" tells nobody anything. A disk-full error, a
+    read-only file, or a locked database all deserve a message that names the
+    file and says what to try.
+    """
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": (
+                f"Couldn't reach the database ({exc}). The store is a single "
+                f"file at {os.path.abspath(db.DB_PATH)} — check it exists and is "
+                "writable, then reload. Your saved clients live in that file, so "
+                "if it's been moved, put it back rather than starting fresh."
+            )
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

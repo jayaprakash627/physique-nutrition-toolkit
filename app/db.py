@@ -93,15 +93,40 @@ MEASUREMENT_COLS = [
 CLIENT_COLS = ["name", "sex", "age", "height_cm", "diet", "goal", "notes"]
 
 
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    """
+    Create the schema if it isn't there.
+
+    Called on every connection, which sounds wasteful but isn't: it's one lookup
+    against sqlite_master, and this app serves a handful of requests per session.
+
+    It exists because `init_db()` at startup is not enough. SQLite is a plain
+    file, so it can disappear under a running process — deleted during a tidy-up,
+    moved, restored from a backup, or TOOLKIT_DB repointed at a fresh path. When
+    that happened, `sqlite3.connect()` happily created a new empty file and every
+    query then failed with "no such table: clients" as an opaque 500. The endpoint
+    looked broken when the real problem was a missing file.
+
+    CREATE TABLE IF NOT EXISTS makes running the script idempotent, so recovery
+    costs nothing and needs no restart.
+    """
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='clients'"
+    ).fetchone()
+    if not exists:
+        conn.executescript(SCHEMA)
+
+
 @contextmanager
 def db():
-    """Short-lived connection, committed on clean exit."""
+    """Short-lived connection, schema-checked, committed on clean exit."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     # SQLite has foreign keys off by default, per connection — so ON DELETE
     # CASCADE only works if we turn it on every time.
     conn.execute("PRAGMA foreign_keys = ON")
     try:
+        _ensure_schema(conn)
         yield conn
         conn.commit()
     finally:
@@ -109,6 +134,13 @@ def db():
 
 
 def init_db() -> None:
+    """
+    Create the schema at startup.
+
+    Now belt-and-braces rather than load-bearing — `db()` self-heals — but it
+    still means a fresh install has its tables before the first request, and it
+    fails loudly at boot if the DB path isn't writable.
+    """
     with db() as c:
         c.executescript(SCHEMA)
 

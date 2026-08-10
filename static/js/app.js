@@ -391,7 +391,19 @@ async function loadClients() {
     document.getElementById('clientList').innerHTML =
       Render.clientList(clients, State.activeClientId);
   } catch (e) {
-    toast(e.message, true);
+    // Inline, not a toast. A toast vanishes after three seconds and leaves the
+    // panel looking merely empty — so a real failure reads as "no clients yet".
+    document.getElementById('clientList').innerHTML = `
+      <div class="flag flag--danger">
+        <div class="flag__title"><span class="flag__level">error</span>Couldn't load your clients</div>
+        <p class="flag__msg">${esc(e.message)}</p>
+        <div class="flag__action">
+          <strong>Try:</strong> reload the page. If it keeps happening, restart
+          the server — the store is a single <code>toolkit.db</code> file in the
+          project folder.
+        </div>
+      </div>`;
+    toast('Could not load clients', true);
   }
 }
 

@@ -502,3 +502,57 @@ def test_saved_report_round_trips():
 
     assert client.delete(f"/api/reports/{rid}").status_code == 200
     assert client.get(f"/api/reports/{rid}").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+#  Database resilience
+#
+#  Regression: the store is a plain file, so it can vanish under a running
+#  process — deleted during a tidy-up, moved, or restored from a backup. Because
+#  init_db() only ran at startup, sqlite then created an empty file and every
+#  Coach mode request failed with an opaque 500 that read as a broken endpoint.
+# ---------------------------------------------------------------------------
+
+def test_api_recovers_when_the_database_file_is_deleted():
+    """Deleting the DB mid-run must self-heal, not 500."""
+    created = client.post("/api/clients", json={
+        "name": "Before Deletion", "sex": "male", "age": 30, "height_cm": 175,
+    })
+    assert created.status_code == 201
+
+    os.remove(_tmp_db)
+    assert not os.path.exists(_tmp_db)
+
+    # The schema is recreated on the next connection, so the endpoint works —
+    # empty, because the data really was in the deleted file.
+    r = client.get("/api/clients")
+    assert r.status_code == 200
+    assert r.json()["clients"] == []
+
+    # And it's fully writable again, not just readable.
+    again = client.post("/api/clients", json={
+        "name": "After Recovery", "sex": "female", "age": 28, "height_cm": 165,
+    })
+    assert again.status_code == 201
+    assert again.json()["name"] == "After Recovery"
+
+    detail = client.get(f"/api/clients/{again.json()['id']}")
+    assert detail.status_code == 200
+
+
+def test_measurements_work_on_a_recreated_database():
+    """The full schema comes back, not just the clients table."""
+    os.remove(_tmp_db)
+
+    c = client.post("/api/clients", json={
+        "name": "Schema Check", "sex": "male", "age": 25, "height_cm": 180,
+    }).json()
+
+    m = client.post(f"/api/clients/{c['id']}/measurements", json={
+        "taken_on": "2026-08-01", "weight_kg": 80, "bodyfat_pct": 18,
+    })
+    assert m.status_code == 201
+
+    # reports table too — all three tables plus the indexes.
+    saved = client.post("/api/reports", json=VALID)
+    assert saved.status_code == 201
