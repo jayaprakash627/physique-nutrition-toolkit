@@ -133,11 +133,14 @@ function fieldHTML(field) {
   let control = '';
 
   if (field.type === 'radio') {
+    // role="radio" + aria-checked, not aria-pressed — this is a radio group, and
+    // the label is announced from the group's own labelling below.
     control = `<div class="cards ${field.options.length > 3 ? 'cards--stack' : ''}"
-                    data-field="${esc(field.key)}" role="radiogroup">
+                    data-field="${esc(field.key)}" role="radiogroup"
+                    aria-labelledby="${id}_label">
       ${field.options.map(o => `
-        <button type="button" data-value="${esc(o.value)}"
-                aria-pressed="${String(value === o.value)}">
+        <button type="button" role="radio" data-value="${esc(o.value)}"
+                aria-checked="${String(value === o.value)}">
           <strong>${esc(o.label)}</strong>
         </button>`).join('')}
     </div>`;
@@ -162,7 +165,7 @@ function fieldHTML(field) {
 
   return `
     <div class="qfield" data-key="${esc(field.key)}">
-      <label class="qfield__label" for="${id}">${esc(field.label)}${unit}${req}</label>
+      <label class="qfield__label" id="${id}_label" for="${id}">${esc(field.label)}${unit}${req}</label>
       ${why}
       ${control}
     </div>`;
@@ -208,14 +211,30 @@ function wireStepInputs() {
   });
 
   host.querySelectorAll('[data-field][role="radiogroup"]').forEach(group => {
-    group.addEventListener('click', e => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      group.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', 'false'));
-      btn.setAttribute('aria-pressed', 'true');
+    const choose = btn => {
+      selectInGroup(group, btn);
       Intake.answers[group.dataset.field] = btn.dataset.value;
       // Clear any "please answer this" highlight now that it's answered.
       group.closest('.qfield')?.classList.remove('qfield--missing');
+    };
+
+    group.addEventListener('click', e => {
+      const btn = e.target.closest('button');
+      if (btn) choose(btn);
+    });
+
+    // Arrow keys move between options, as a keyboard or screen-reader user
+    // expects from a radio group. Enter and Space already work on buttons.
+    group.addEventListener('keydown', e => {
+      if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+      const buttons = [...group.querySelectorAll('button')];
+      const current = buttons.indexOf(document.activeElement);
+      if (current === -1) return;
+      e.preventDefault();
+      const step = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1 : -1;
+      const next = buttons[(current + step + buttons.length) % buttons.length];
+      next.focus();
+      choose(next);
     });
   });
 }

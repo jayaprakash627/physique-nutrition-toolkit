@@ -102,10 +102,6 @@ def session_valid(token: str | None) -> bool:
     return True
 
 
-def active_session_count() -> int:
-    _prune_sessions()
-    return len(_sessions)
-
 
 # ---------------------------------------------------------------------------
 #  Login throttling

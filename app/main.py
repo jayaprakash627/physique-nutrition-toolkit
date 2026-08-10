@@ -471,6 +471,42 @@ def get_intake(intake_id: int):
     }
 
 
+@app.get("/api/intakes/{intake_id}/csv", dependencies=[Depends(security.require_coach)])
+def export_intake_csv(intake_id: int):
+    """
+    Download one submission as CSV.
+
+    Two real uses: handing a client's answers to a dietitian or doctor when the
+    health section says you should, and giving the client a copy of their own data
+    if they ask for one — which the consent screen promises.
+    """
+    row = db.get_intake(intake_id)
+    if not row:
+        raise HTTPException(404, "Submission not found")
+
+    csv_text = intake.to_csv(row["answers"], meta={
+        "Submitted": row.get("created_at") or "",
+        "Consent recorded": row.get("consent_at") or "",
+        "Consent version": row.get("consent_version") or "",
+    })
+
+    # A filename built from the client's name, stripped to characters that are
+    # safe in a Content-Disposition header and on every filesystem.
+    raw_name = (row.get("full_name") or f"intake-{intake_id}")
+    safe = "".join(ch if ch.isalnum() or ch in "-_ " else "" for ch in raw_name).strip()
+    safe = (safe.replace(" ", "-") or f"intake-{intake_id}")[:40]
+
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe}-intake.csv"',
+            # This is somebody's health data leaving the app — never cache it.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @app.post("/api/intakes/{intake_id}/convert", status_code=201,
           dependencies=[Depends(security.require_coach)])
 def convert_intake(intake_id: int):

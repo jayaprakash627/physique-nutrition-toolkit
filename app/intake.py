@@ -537,9 +537,65 @@ def closing_message(answers: dict) -> dict:
 
 
 def flatten_fields() -> list[dict]:
-    """Every field across all sections — used for validation and CSV export."""
+    """Every field across all sections, in questionnaire order."""
     return [f for section in SECTIONS for f in section["fields"]]
 
 
-def required_keys() -> list[str]:
-    return [f["key"] for f in flatten_fields() if f.get("required")]
+def label_for_answer(field: dict, raw) -> str:
+    """
+    The human-readable form of one stored answer.
+
+    Stored values for radio and select fields are machine keys ("very_hot",
+    "basic_gym"). Anywhere a person reads an answer — the coach's view, an export,
+    a printout — it has to show the label the client actually saw, or it reads
+    like a database dump.
+    """
+    if raw is None or str(raw).strip() == "":
+        return ""
+    if field.get("options"):
+        match = next((o for o in field["options"] if o["value"] == raw), None)
+        if match:
+            return match["label"]
+    text = str(raw)
+    return f"{text} {field['unit']}" if field.get("unit") else text
+
+
+def to_csv(answers: dict, *, meta: dict | None = None) -> str:
+    """
+    One submission as CSV — question, answer, and which section it came from.
+
+    Long-form, one row per question, rather than one wide row per client. A coach
+    exporting this is handing it to a dietitian or filing it for a single person,
+    so readability beats being able to stack many clients in a spreadsheet.
+
+    Built with the `csv` module rather than string joins so an answer containing a
+    comma, quote or newline (very likely — most of these are free text) can't
+    corrupt the file.
+    """
+    import csv
+    import io
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+
+    writer.writerow(["Section", "Question", "Answer"])
+    for section in SECTIONS:
+        for field in section["fields"]:
+            value = label_for_answer(field, answers.get(field["key"]))
+            if value:
+                writer.writerow([section["title"], field["label"], value])
+
+    # Any answer whose question has since been removed or renamed. Without this,
+    # editing the questionnaire would silently drop data a client already gave.
+    known = {f["key"] for f in flatten_fields()}
+    for key, value in answers.items():
+        if key not in known and str(value).strip():
+            writer.writerow(["Other (question since changed)", key, str(value)])
+
+    if meta:
+        writer.writerow([])
+        for label, value in meta.items():
+            writer.writerow(["Record", label, value])
+
+    return buf.getvalue()
+

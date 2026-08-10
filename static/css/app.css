@@ -268,7 +268,8 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   font-size: var(--fs-sm); font-weight: 500;
   transition: all var(--dur-fast) var(--ease);
 }
-.seg button[aria-pressed="true"] {
+.seg button[aria-pressed="true"],
+.seg button[aria-checked="true"] {
   background: var(--surface-3); color: var(--text);
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
@@ -894,11 +895,16 @@ canvas { display: block; width: 100%; height: auto; }
 }
 .cards button span { font-size: var(--fs-xs); line-height: 1.4; }
 .cards button:hover { border-color: var(--line-strong); background: var(--surface-3); }
-.cards button[aria-pressed="true"] {
+/* Both ARIA states are matched: toggle groups use aria-pressed, radio groups use
+   aria-checked. Styling only one silently broke the selected look when the
+   radiogroups were corrected to proper ARIA. */
+.cards button[aria-pressed="true"],
+.cards button[aria-checked="true"] {
   border-color: var(--accent);
   background: var(--gradient-soft);
 }
-.cards button[aria-pressed="true"] strong { color: var(--accent); }
+.cards button[aria-pressed="true"] strong,
+.cards button[aria-checked="true"] strong { color: var(--accent); }
 
 .cards--stack button { flex-direction: row; align-items: baseline; gap: var(--sp-3); }
 .cards--stack button strong { min-width: 120px; }
@@ -1367,4 +1373,55 @@ canvas { display: block; width: 100%; height: auto; }
   .blocked::after { display: none; }
   a { color: #000; text-decoration: underline; }
   a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 8pt; color: #666; }
+
+  /* ---- Onboarding & coach surfaces ---------------------------------- */
+
+  /* Interface furniture that means nothing on paper. */
+  .progress, .stepnav, .login, .seg, .cards, .upgrade,
+  .recap, .credentials__row { display: none !important; }
+
+  /* An onboarding link contains a live, single-use secret token. Printing the
+     coach workspace must never put one on paper where it can be photographed or
+     left on a desk — so the URLs are stripped, not just shrunk. */
+  .invite__url { display: none !important; }
+  .invite { border: none; padding: var(--sp-2) 0; background: none; }
+
+  /* A client's questionnaire is the main thing worth printing here: for their
+     records, or to hand to a dietitian when the health section says you should. */
+  .answer-row {
+    grid-template-columns: 38% 1fr;
+    break-inside: avoid;
+    padding: 4pt 0;
+    border-bottom: 1px solid #ddd;
+  }
+  .answer-row dt { font-weight: 600; }
+  .qfield { break-inside: avoid; }
+  .askwhy { color: #444; border-left-color: #999; }
+
+  /* Keep a numbered step and its text together across a page break. */
+  .step, .job, .risk-box, .micro, .invite { break-inside: avoid; }
+  .step__n {
+    background: #eee !important; color: #000 !important;
+    border: 1px solid #999;
+  }
+
+  /* Gradient text renders as invisible in most print pipelines, because the
+     fill is transparent and the background image is dropped. */
+  .hero h1, .answer__kcal, .progress__fill {
+    background: none !important;
+    -webkit-text-fill-color: #000 !important;
+    color: #000 !important;
+  }
+
+  /* A printed record needs a date; on screen the browser chrome shows it. */
+  .onboarding main::after,
+  #intakeDetail::after {
+    content: "Printed from the Physique & Nutrition Coaching Toolkit — confidential client record.";
+    display: block;
+    margin-top: 12pt;
+    padding-top: 6pt;
+    border-top: 1px solid #999;
+    font-size: 8pt;
+    color: #555;
+  }
 }

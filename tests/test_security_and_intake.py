@@ -480,3 +480,118 @@ def test_consent_text_covers_the_promises_we_make():
     for promise in ("delete", "not sold", "not a medical"):
         assert promise in text, f"consent text is missing: {promise}"
     assert intake.CONSENT_VERSION
+
+
+# ===========================================================================
+#  CSV EXPORT
+#
+#  Two real uses: handing a client's answers to a dietitian when the health
+#  section says you should, and giving the client their own copy — which the
+#  consent screen promises. Both mean the file leaves the app, so it has to be
+#  correct and it has to be gated.
+# ===========================================================================
+
+HOSTILE_ANSWERS = {
+    **VALID_ANSWERS,
+    "work_type": "shift",
+    "climate": "very_hot",
+    # A comma, escaped quotes and a newline — all of which would corrupt a
+    # hand-rolled CSV.
+    "dislikes": 'Paneer, mushrooms, and "karela"\nAlso bitter gourd',
+}
+
+
+def submitted_intake(coach, anon, answers=None):
+    invite = make_invite(coach)
+    anon.post(f"/api/intake/{invite['token']}",
+              json={"answers": answers or VALID_ANSWERS, "consent": True})
+    return coach.get("/api/intakes").json()["intakes"][0]["id"]
+
+
+def test_csv_export_requires_a_login(coach, anon):
+    intake_id = submitted_intake(coach, anon)
+    assert anon.get(f"/api/intakes/{intake_id}/csv").status_code == 401
+    assert coach.get(f"/api/intakes/{intake_id}/csv").status_code == 200
+
+
+def test_csv_export_is_well_formed_with_hostile_answers(coach, anon):
+    """Free-text answers routinely contain commas, quotes and newlines."""
+    import csv
+    import io
+
+    intake_id = submitted_intake(coach, anon, HOSTILE_ANSWERS)
+    r = coach.get(f"/api/intakes/{intake_id}/csv")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "attachment" in r.headers["content-disposition"]
+    # Somebody's health data leaving the app must not be cached.
+    assert "no-store" in r.headers["cache-control"]
+
+    rows = list(csv.reader(io.StringIO(r.text)))
+    assert rows[0] == ["Section", "Question", "Answer"]
+    assert all(len(row) in (0, 3) for row in rows), "a row broke the column count"
+
+    flat = "\n".join(",".join(row) for row in rows)
+    assert "bitter gourd" in flat, "the newline inside an answer lost data"
+    assert 'karela' in flat
+
+
+def test_csv_shows_labels_not_database_keys(coach, anon):
+    """
+    Stored values are machine keys. A dietitian reading "shift" and "very_hot"
+    learns nothing — it has to say what the client actually chose.
+    """
+    intake_id = submitted_intake(coach, anon, HOSTILE_ANSWERS)
+    text = coach.get(f"/api/intakes/{intake_id}/csv").text
+    assert "Shift work / nights" in text
+    assert "Very hot or humid" in text
+    # And the questions, not the field keys.
+    assert "What's your work day like?" in text
+    assert "work_type" not in text
+
+
+def test_csv_includes_the_consent_record(coach, anon):
+    """Proof of consent should travel with the data it covers."""
+    intake_id = submitted_intake(coach, anon)
+    text = coach.get(f"/api/intakes/{intake_id}/csv").text
+    assert "Consent recorded" in text
+    assert intake.CONSENT_VERSION in text
+
+
+def test_csv_keeps_answers_whose_question_has_been_removed(coach, anon):
+    """
+    Editing the questionnaire must not silently drop data a client already gave —
+    that would be quiet data loss on someone's health record.
+    """
+    intake_id = submitted_intake(coach, anon, {
+        **VALID_ANSWERS, "a_retired_question": "an answer that still matters",
+    })
+    text = coach.get(f"/api/intakes/{intake_id}/csv").text
+    assert "an answer that still matters" in text
+    assert "question since changed" in text
+
+
+def test_csv_filename_is_safe(coach, anon):
+    """A name with quotes or slashes must not break the header or the filesystem."""
+    intake_id = submitted_intake(coach, anon, {
+        **VALID_ANSWERS, "full_name": 'Ravi "Bull" Kumar/../etc',
+    })
+    disposition = coach.get(f"/api/intakes/{intake_id}/csv").headers["content-disposition"]
+    assert '"' not in disposition.split("filename=")[1].strip('"')
+    assert "/" not in disposition.split("filename=")[1]
+    assert ".." not in disposition
+
+
+def test_csv_export_of_a_missing_submission_is_404(coach):
+    assert coach.get("/api/intakes/999999/csv").status_code == 404
+
+
+def test_label_for_answer_maps_options_and_keeps_units():
+    fields = {f["key"]: f for f in intake.flatten_fields()}
+    assert intake.label_for_answer(fields["work_type"], "shift") == "Shift work / nights"
+    assert intake.label_for_answer(fields["height_cm"], "176") == "176 cm"
+    assert intake.label_for_answer(fields["full_name"], "Asha") == "Asha"
+    # Blank and unknown values degrade quietly rather than printing "None".
+    assert intake.label_for_answer(fields["work_type"], None) == ""
+    assert intake.label_for_answer(fields["work_type"], "") == ""
+    assert intake.label_for_answer(fields["work_type"], "not_an_option") == "not_an_option"

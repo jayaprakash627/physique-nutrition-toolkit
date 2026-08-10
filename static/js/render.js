@@ -1381,6 +1381,11 @@ Object.assign(Render, {
               : `<button class="btn btn--primary btn--sm" data-convert="${data.id}">
                    Add as a client
                  </button>`}
+            <a class="btn btn--ghost btn--sm no-print" href="/api/intakes/${data.id}/csv"
+               title="Download as CSV — for a dietitian, or to give the client their own copy">
+              Export CSV
+            </a>
+            <button class="btn btn--ghost btn--sm no-print" onclick="window.print()">Print</button>
             <button class="btn btn--danger btn--sm" data-del-intake="${data.id}"
                     title="Permanently delete this submission">Delete</button>
             <button class="btn btn--ghost btn--sm" id="closeIntake">Close</button>

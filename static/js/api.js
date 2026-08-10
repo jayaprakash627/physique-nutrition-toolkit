@@ -147,10 +147,31 @@ function toast(msg, isError = false) {
   setTimeout(() => el.remove(), isError ? 6000 : 3200);
 }
 
-/** Read the current value of a segmented control. */
+/**
+ * Read the current value of a segmented control or choice-card group.
+ *
+ * Accepts either ARIA state, because the two control types correctly use
+ * different ones: a toggle group uses aria-pressed, while a group with
+ * role="radiogroup" must use role="radio" + aria-checked. Reading both keeps one
+ * accessor working for both.
+ */
 function segValue(name) {
-  const btn = document.querySelector(`[data-seg="${name}"] button[aria-pressed="true"]`);
+  const btn = document.querySelector(
+    `[data-seg="${name}"] button[aria-pressed="true"],`
+    + ` [data-seg="${name}"] button[aria-checked="true"]`);
   return btn ? btn.dataset.value : null;
+}
+
+/** Set selection state using whichever ARIA attribute this control uses. */
+function setSelected(btn, on) {
+  const attr = btn.hasAttribute('aria-checked') ? 'aria-checked' : 'aria-pressed';
+  btn.setAttribute(attr, String(on));
+}
+
+/** Select one option within a group, clearing the others. */
+function selectInGroup(group, btn) {
+  group.querySelectorAll('button').forEach(b => setSelected(b, false));
+  setSelected(btn, true);
 }
 
 /** Read a number input, returning null when empty so optional fields stay null. */
@@ -161,15 +182,30 @@ function numVal(id) {
   return Number.isNaN(v) ? null : v;
 }
 
-/** Wire up every segmented control on the page. */
+/** Wire up every segmented control and choice-card group on the page. */
 function initSegs(onChange) {
   document.querySelectorAll('[data-seg]').forEach(seg => {
     seg.addEventListener('click', e => {
       const btn = e.target.closest('button');
       if (!btn) return;
-      seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', 'false'));
-      btn.setAttribute('aria-pressed', 'true');
+      selectInGroup(seg, btn);
       if (onChange) onChange(seg.dataset.seg, btn.dataset.value);
+    });
+
+    // Arrow keys move between options, which is what a screen-reader or
+    // keyboard-only user expects from a radio group. Buttons already handle
+    // Enter and Space, so this is the piece that was missing.
+    seg.addEventListener('keydown', e => {
+      if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+      const buttons = [...seg.querySelectorAll('button')];
+      const current = buttons.indexOf(document.activeElement);
+      if (current === -1) return;
+      e.preventDefault();
+      const step = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1 : -1;
+      const next = buttons[(current + step + buttons.length) % buttons.length];
+      next.focus();
+      selectInGroup(seg, next);
+      if (onChange) onChange(seg.dataset.seg, next.dataset.value);
     });
   });
 }

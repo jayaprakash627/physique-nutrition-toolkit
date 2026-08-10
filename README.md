@@ -153,7 +153,9 @@ Two design decisions carry the whole thing:
   what you're paid for.
 
 Submissions convert to a tracked client in one click, with their starting weight
-already logged.
+already logged. Each one can be **exported as CSV** (for a dietitian when the
+health section says you should involve one, or to give the client their own copy
+as the consent screen promises) or **printed** as a confidential record.
 
 ## ▶️ Run it
 
@@ -271,7 +273,10 @@ Honest boundaries, so you know what you're deploying:
 pip install -r requirements-dev.txt && pytest -q
 ```
 
-232 tests covering every formula against its published value, the safety
+The suite sets its own `COACH_PASSWORD` and a temp database, so it needs no setup
+and never touches your real data.
+
+240 tests covering every formula against its published value, the safety
 guardrails, knowledge-base integrity (every citation resolves, every nutrient is
 complete), the plain-language summary for every goal — including a check that no
 internal enum like `aggressive_cut` reaches text a person reads — the API
@@ -294,7 +299,7 @@ removed.
 | Auth | stdlib `secrets` | Server-side sessions, constant-time compare, rate-limited login — no dependency |
 | Frontend | Plain HTML/CSS/JS | No framework, no build step — clone and run |
 | Charts | Hand-rolled Canvas | ~250 lines, DPR-aware, theme-reactive; no chart library |
-| Tests | pytest | 232 tests, no network, no fixtures beyond a temp DB |
+| Tests | pytest | 240 tests, no network, no fixtures beyond a temp DB |
 
 ### Layout
 
@@ -315,10 +320,15 @@ app/
     ├── micronutrients.py  the vitamin & mineral panel + risk profiling
     └── foods.py           Indian food portions (IFCT 2017)
 static/
-├── index.html
+├── index.html      the calculator + coach workspace
+├── start.html      client onboarding at /start/<token>
 ├── css/  theme.css (tokens, light + dark) · app.css
-└── js/   api.js · charts.js · render.js · app.js
-tests/   150 tests
+└── js/   api.js · charts.js · render.js · app.js · start.js
+tests/
+├── test_formulas.py             every equation vs its published value
+├── test_safety.py               the guardrails, and the plain-language summary
+├── test_knowledge_and_api.py    content integrity + the API contract
+└── test_security_and_intake.py  the auth boundary, onboarding, CSV export
 ```
 
 **Why `knowledge/` is its own package:** the nutrition content is the product,
@@ -534,6 +544,7 @@ clearly marked as not recommended, with the flags leading.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
+| **Public — no login, stores nothing** | | |
 | `GET` | `/api/meta` | Every option list, help text and disclaimer |
 | `GET` | `/api/sources` | The full citation registry |
 | `GET` | `/api/micronutrients?sex=` | Reference panel, no client needed |
@@ -541,11 +552,31 @@ clearly marked as not recommended, with the flags leading.
 | `POST` | `/api/bodyfat` | Method comparison only |
 | `POST` | `/api/prep-plan` | Goal / contest projection |
 | `POST` | `/api/strength` | 1RM, % table, DOTS/Wilks |
-| `GET/POST` | `/api/clients` | List / create clients |
-| `GET/PUT/DELETE` | `/api/clients/{id}` | Client detail, update, delete (cascades) |
+| `GET` | `/api/health` | Liveness, content counts, and whether the coach lock is on |
+| **Client onboarding — gated by an unguessable token** | | |
+| `GET` | `/api/intake/{token}` | The questionnaire, or why the link is dead |
+| `POST` | `/api/intake/{token}` | Submit it (single use) |
+| **Coach session** | | |
+| `GET` | `/api/session` | Am I logged in? Is a password even configured? |
+| `POST` | `/api/login` | Log in (rate-limited) |
+| `POST` | `/api/logout` | Destroy the session |
+| **Coach only 🔒** | | |
+| `GET` `POST` | `/api/invites` | List / create onboarding links |
+| `POST` | `/api/invites/{id}/revoke` | Stop a link working |
+| `DELETE` | `/api/invites/{id}` | Remove a link |
+| `GET` | `/api/intakes` | Submitted questionnaires |
+| `GET` | `/api/intakes/{id}` | One submission + what stands out |
+| `GET` | `/api/intakes/{id}/csv` | Download it as CSV |
+| `POST` | `/api/intakes/{id}/convert` | Turn it into a tracked client |
+| `DELETE` | `/api/intakes/{id}` | Hard delete (right to erasure) |
+| `GET` `POST` | `/api/clients` | List / create clients |
+| `GET` `PUT` `DELETE` | `/api/clients/{id}` | Detail, update, delete (cascades) |
 | `POST` | `/api/clients/{id}/measurements` | Log a measurement |
-| `GET/POST` | `/api/reports` | Saved assessment snapshots |
-| `GET` | `/api/health` | Liveness + content counts |
+| `DELETE` | `/api/measurements/{id}` | Remove a measurement |
+| `GET` `POST` | `/api/reports` | Saved assessment snapshots |
+| `GET` `DELETE` | `/api/reports/{id}` | Load / delete a snapshot |
+
+🔒 = requires a coach session. The calculator endpoints need no login.
 
 ```bash
 curl -s localhost:8000/api/assess -H 'Content-Type: application/json' -d '{
@@ -575,6 +606,18 @@ the options at once matters for the two choices that actually change the plan, a
 46px targets work on a phone. Charts are hand-rolled Canvas: device-pixel-ratio
 aware so they're sharp on Retina, and they re-read the CSS custom properties on
 theme toggle so they recolour in place.
+
+**Accessibility and contrast were measured, not assumed.** The choice cards are
+proper `role="radio"` + `aria-checked` groups with arrow-key navigation, not toggle
+buttons wearing a radiogroup label. And every colour in the light theme was
+checked against the background it actually renders on: the original mid-teal
+accent came out at 3.3:1 behind 12–14px text where WCAG AA wants 4.5, which reads
+fine to most people and fails anyone with reduced contrast sensitivity. Darkening
+one token fixed it everywhere. Both themes now audit clean.
+
+The **print stylesheet** force-opens every collapsed panel so a printed plan
+carries its reasoning, and it *strips onboarding link URLs* — those contain live
+single-use tokens, and a printout left on a desk shouldn't be a credential.
 
 The print stylesheet **force-opens every collapsed panel**, so a printed client
 summary carries the reasoning rather than a page of bare numbers. That's the whole

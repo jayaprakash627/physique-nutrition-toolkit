@@ -58,7 +58,10 @@
 
   --text:       #E6EDF3;
   --text-muted: #8b97a6;
-  --text-faint: #77818f;
+  /* 4.5:1 on --surface-2, measured. The previous #77818f came out at 4.29 —
+     invisible as a defect, but it's the colour used for every food portion and
+     citation note, so it's a lot of small text sitting just under AA. */
+  --text-faint: #838e9c;
 
   --teal:   #5EEAD4;
   --violet: #A78BFA;
@@ -105,29 +108,42 @@
   --text-muted: #55606e;
   --text-faint: #667283;
 
-  /* Darkened accents — the dark-theme values fail contrast on white. */
-  --teal:   #0F9E8A;
-  --violet: #7C5CE0;
+  /* Darkened accents — the dark-theme values fail contrast on white. Every
+   * value in this block was measured against the background it actually
+   * renders on, not eyeballed.
+   *
+   * The teal is darker than it looks like it needs to be, and measured rather
+   * than eyeballed. As the accent it ends up as small text in a lot of places
+   * (section eyebrows, "Why this number?" summaries, tile labels, citation
+   * keys), and at 12–14px WCAG AA wants 4.5:1. A mid teal like #0F9E8A only
+   * reaches ~3.3:1 on a white card — it reads fine to most people and fails for
+   * anyone with reduced contrast sensitivity. #0A6E5F measures ~6.2:1 on white
+   * and ~5.7:1 on --surface-2, so every accent-text use passes without needing
+   * a separate token applied in a dozen places. */
+  --teal:   #0A6E5F;
+  --violet: #6F52C9;
   --blue:   #2563EB;
 
   --accent: var(--teal);
-  --gradient: linear-gradient(135deg, #0F9E8A 0%, #2563EB 45%, #7C5CE0 100%);
-  --gradient-soft: linear-gradient(135deg, rgba(15,158,138,0.10), rgba(124,92,224,0.10));
+  --gradient: linear-gradient(135deg, #0A6E5F 0%, #2563EB 45%, #6F52C9 100%);
+  --gradient-soft: linear-gradient(135deg, rgba(10,110,95,0.10), rgba(111,82,201,0.10));
 
-  --good:    #15803D;
-  --ok:      #0F9E8A;
-  --caution: #B45309;
-  --danger:  #DC2626;
+  --good:    #127336;
+  --ok:      #0A6E5F;   /* chip text — same contrast reasoning as --teal */
+  --caution: #A24A08;
+  --danger:  #C62222;
 
-  --good-bg:    rgba(21, 128, 61, 0.09);
-  --ok-bg:      rgba(15, 158, 138, 0.09);
-  --caution-bg: rgba(180, 83, 9, 0.10);
-  --danger-bg:  rgba(220, 38, 38, 0.09);
+  /* Tints are kept in step with the text colours above so a chip's label and
+     its background stay the same hue family. */
+  --good-bg:    rgba(18, 115, 54, 0.09);
+  --ok-bg:      rgba(10, 110, 95, 0.09);
+  --caution-bg: rgba(162, 74, 8, 0.10);
+  --danger-bg:  rgba(198, 34, 34, 0.09);
 
   --c-protein: #2563EB;
   --c-fat:     #B45309;
-  --c-carbs:   #0F9E8A;
-  --c-fibre:   #7C5CE0;
+  --c-carbs:   #0A6E5F;  /* also used as the carbs tile label at 12px */
+  --c-fibre:   #6F52C9;
   --c-water:   #2563EB;
 
   --shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
