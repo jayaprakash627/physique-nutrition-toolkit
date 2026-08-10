@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Physique &amp; Nutrition Coaching Toolkit</title>
+  <meta name="description" content="Evidence-based physique and nutrition targets that explain themselves — every number comes with the physiology behind it, real food portions, and the published standard it came from." />
+
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/static/css/theme.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+
+<!-- ========================= NAV ========================= -->
+<nav class="nav">
+  <div class="nav__brand">
+    <span class="nav__mark" aria-hidden="true">PN</span>
+    <span class="nav__brand-text">
+      Physique &amp; Nutrition Toolkit
+      <span class="nav__brand-sub">Coaching tool that explains every number</span>
+    </span>
+  </div>
+  <span class="nav__spacer"></span>
+  <button class="icon-btn" id="themeToggle" title="Switch light / dark theme" aria-label="Switch theme">
+    <span id="themeIcon" aria-hidden="true">☀</span>
+  </button>
+</nav>
+
+<!-- ========================= TABS ========================= -->
+<div class="tabs" role="tablist" aria-label="Sections">
+  <button class="tab" role="tab" data-tab="assess"   aria-selected="true">Full assessment</button>
+  <button class="tab" role="tab" data-tab="bodyfat"  aria-selected="false">Body fat methods</button>
+  <button class="tab" role="tab" data-tab="prep"     aria-selected="false">Goal &amp; prep planner</button>
+  <button class="tab" role="tab" data-tab="strength" aria-selected="false">Strength tools</button>
+  <button class="tab" role="tab" data-tab="clients"  aria-selected="false">Clients &amp; tracking</button>
+  <button class="tab" role="tab" data-tab="learn"    aria-selected="false">Micronutrient reference</button>
+  <button class="tab" role="tab" data-tab="sources"  aria-selected="false">Sources</button>
+</div>
+
+<main class="wrap">
+
+  <!-- ================= TAB: FULL ASSESSMENT ================= -->
+  <section class="panel" id="panel-assess" role="tabpanel">
+    <div class="page-head">
+      <div class="eyebrow">The full picture</div>
+      <h1>Every number, and why</h1>
+      <p>
+        Most plans hand you a target and no reasoning, so you can't tell a good
+        number from a guess. Fill this in and you get calories, macros, fibre,
+        water and a micronutrient panel — each one with the physiology behind it,
+        what goes wrong at too little or too much, real food portions to hit it,
+        and the published standard it came from.
+      </p>
+    </div>
+
+    <div class="disclaimer" id="disclaimerTop">Loading…</div>
+
+    <div class="split">
+      <!-- ---------- FORM RAIL ---------- -->
+      <form class="rail" id="assessForm">
+        <div class="card">
+          <div class="card__head"><h2>About you</h2></div>
+
+          <div class="field">
+            <span class="field-label">Sex</span>
+            <div class="seg" data-seg="sex">
+              <button type="button" data-value="male" aria-pressed="true">Male</button>
+              <button type="button" data-value="female" aria-pressed="false">Female</button>
+            </div>
+            <div class="field__help">
+              Body-fat equations, healthy fat floors and iron needs all differ
+              genuinely by sex — this isn't cosmetic.
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label for="age">Age</label>
+              <input type="number" id="age" value="24" min="10" max="100" required />
+            </div>
+            <div class="field">
+              <label for="weight">Weight (kg)</label>
+              <input type="number" id="weight" value="78" min="25" max="300" step="0.1" required />
+            </div>
+            <div class="field">
+              <label for="height">Height (cm)</label>
+              <input type="number" id="height" value="175" min="100" max="250" step="0.5" required />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="goal">Goal</label>
+            <select id="goal"></select>
+          </div>
+
+          <div class="field">
+            <label for="activity">Activity level</label>
+            <select id="activity"></select>
+            <div class="field__help">
+              This describes your <em>whole</em> day, not just gym time — and it's
+              the biggest source of error here. Most people pick one level too
+              high. When unsure, go lower.
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="diet">Diet</label>
+            <select id="diet"></select>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label for="trainingHours">Training (h/day)</label>
+              <input type="number" id="trainingHours" value="1.5" min="0" max="8" step="0.25" />
+            </div>
+            <div class="field">
+              <label for="meals">Meals/day</label>
+              <input type="number" id="meals" value="4" min="1" max="8" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="climate">Climate</label>
+            <select id="climate"></select>
+          </div>
+        </div>
+
+        <!-- ---------- MEASUREMENTS ---------- -->
+        <div class="card">
+          <div class="card__head"><h2>Measurements</h2></div>
+          <p class="card__hint" id="techniqueHint"></p>
+
+          <details class="fold" open>
+            <summary>Already know your body fat?</summary>
+            <div class="fold__body">
+              <div class="field">
+                <label for="bodyfatPct">Body fat %</label>
+                <input type="number" id="bodyfatPct" min="2" max="70" step="0.1" placeholder="e.g. 15.2" />
+                <div class="field__help">
+                  From a DEXA scan, BodPod, InBody or a coach's callipers. If you
+                  enter this it overrides every estimate below — a real
+                  measurement beats a formula.
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details class="fold" open>
+            <summary>Tape measurements (Navy method)</summary>
+            <div class="fold__body">
+              <div class="row">
+                <div class="field">
+                  <label for="g_neck">Neck (cm)</label>
+                  <input type="number" id="g_neck" value="39" min="20" max="70" step="0.5" />
+                </div>
+                <div class="field">
+                  <label for="g_waist">Waist (cm)</label>
+                  <input type="number" id="g_waist" value="82" min="40" max="200" step="0.5" />
+                </div>
+                <div class="field" id="hipField">
+                  <label for="g_hip">Hip (cm)</label>
+                  <input type="number" id="g_hip" min="50" max="200" step="0.5" />
+                </div>
+              </div>
+              <div class="field__help" id="girthHelp"></div>
+            </div>
+          </details>
+
+          <details class="fold">
+            <summary>Calliper skinfolds (Jackson–Pollock)</summary>
+            <div class="fold__body">
+              <p class="xs muted">
+                Fill 3 sites for the 3-site equation, or all 7 for the 7-site.
+                Sites for the 3-site method differ by sex — the ones you need are
+                marked below.
+              </p>
+              <div class="row">
+                <div class="field"><label for="s_chest">Chest (mm)</label><input type="number" id="s_chest" min="1" max="80" step="0.5" /></div>
+                <div class="field"><label for="s_abdomen">Abdomen (mm)</label><input type="number" id="s_abdomen" min="1" max="80" step="0.5" /></div>
+                <div class="field"><label for="s_thigh">Thigh (mm)</label><input type="number" id="s_thigh" min="1" max="80" step="0.5" /></div>
+                <div class="field"><label for="s_triceps">Triceps (mm)</label><input type="number" id="s_triceps" min="1" max="80" step="0.5" /></div>
+                <div class="field"><label for="s_suprailiac">Suprailiac (mm)</label><input type="number" id="s_suprailiac" min="1" max="80" step="0.5" /></div>
+                <div class="field"><label for="s_subscapular">Subscapular (mm)</label><input type="number" id="s_subscapular" min="1" max="80" step="0.5" /></div>
+                <div class="field"><label for="s_midaxillary">Midaxillary (mm)</label><input type="number" id="s_midaxillary" min="1" max="80" step="0.5" /></div>
+              </div>
+              <div class="field__help" id="skinfoldHelp"></div>
+            </div>
+          </details>
+        </div>
+
+        <!-- ---------- CONTEXT / SAFETY ---------- -->
+        <div class="card">
+          <div class="card__head"><h2>Goal &amp; safety context</h2></div>
+
+          <div class="field">
+            <label for="targetBf">Target body fat % <span class="muted xs">(optional)</span></label>
+            <input type="number" id="targetBf" min="2" max="60" step="0.5" placeholder="e.g. 12" />
+          </div>
+
+          <label class="checkbox">
+            <input type="checkbox" id="contestPrep" />
+            <span>Preparing for a contest
+              <small>Adds prep-specific electrolyte and micronutrient flags</small>
+            </span>
+          </label>
+
+          <label class="checkbox">
+            <input type="checkbox" id="pregnant" />
+            <span>Pregnant or breastfeeding
+              <small>Needs clinical guidance — these targets won't apply</small>
+            </span>
+          </label>
+
+          <label class="checkbox">
+            <input type="checkbox" id="medicalConditions" />
+            <span>Managing a medical condition
+              <small>Kidney, liver, thyroid, diabetes, heart — anything that changes safe targets</small>
+            </span>
+          </label>
+
+          <button type="submit" class="btn btn--primary btn--full" id="assessBtn">
+            Build my plan
+          </button>
+        </div>
+      </form>
+
+      <!-- ---------- RESULTS ---------- -->
+      <div id="assessResults">
+        <div class="empty">
+          <div class="empty__icon" aria-hidden="true">◐</div>
+          <p>Fill in the form and hit <strong>Build my plan</strong>.</p>
+          <p class="xs">The defaults are a worked example — you can just press the button to see how it reads.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TAB: BODY FAT ================= -->
+  <section class="panel" id="panel-bodyfat" role="tabpanel" hidden>
+    <div class="page-head">
+      <div class="eyebrow">Four methods, one body</div>
+      <h1>Body fat, honestly</h1>
+      <p>
+        Four estimation methods run side by side. They will disagree — and that
+        disagreement is the most useful thing on the screen, because it shows you
+        the error bars every single-number body-fat reading hides.
+      </p>
+    </div>
+
+    <div class="split">
+      <form class="rail" id="bfForm">
+        <div class="card">
+          <div class="card__head"><h2>Measurements</h2></div>
+
+          <div class="field">
+            <span class="field-label">Sex</span>
+            <div class="seg" data-seg="bfSex">
+              <button type="button" data-value="male" aria-pressed="true">Male</button>
+              <button type="button" data-value="female" aria-pressed="false">Female</button>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field"><label for="bf_age">Age</label><input type="number" id="bf_age" value="24" min="10" max="100" /></div>
+            <div class="field"><label for="bf_weight">Weight (kg)</label><input type="number" id="bf_weight" value="78" min="25" max="300" step="0.1" /></div>
+            <div class="field"><label for="bf_height">Height (cm)</label><input type="number" id="bf_height" value="175" min="100" max="250" step="0.5" /></div>
+          </div>
+
+          <details class="fold" open>
+            <summary>Tape (Navy)</summary>
+            <div class="fold__body">
+              <div class="row">
+                <div class="field"><label for="bf_neck">Neck (cm)</label><input type="number" id="bf_neck" value="39" step="0.5" /></div>
+                <div class="field"><label for="bf_waist">Waist (cm)</label><input type="number" id="bf_waist" value="82" step="0.5" /></div>
+                <div class="field"><label for="bf_hip">Hip (cm)</label><input type="number" id="bf_hip" step="0.5" /></div>
+              </div>
+            </div>
+          </details>
+
+          <details class="fold" open>
+            <summary>Skinfolds (mm)</summary>
+            <div class="fold__body">
+              <div class="row">
+                <div class="field"><label for="bf_s_chest">Chest</label><input type="number" id="bf_s_chest" value="8" step="0.5" /></div>
+                <div class="field"><label for="bf_s_abdomen">Abdomen</label><input type="number" id="bf_s_abdomen" value="16" step="0.5" /></div>
+                <div class="field"><label for="bf_s_thigh">Thigh</label><input type="number" id="bf_s_thigh" value="10" step="0.5" /></div>
+                <div class="field"><label for="bf_s_triceps">Triceps</label><input type="number" id="bf_s_triceps" step="0.5" /></div>
+                <div class="field"><label for="bf_s_suprailiac">Suprailiac</label><input type="number" id="bf_s_suprailiac" step="0.5" /></div>
+                <div class="field"><label for="bf_s_subscapular">Subscapular</label><input type="number" id="bf_s_subscapular" step="0.5" /></div>
+                <div class="field"><label for="bf_s_midaxillary">Midaxillary</label><input type="number" id="bf_s_midaxillary" step="0.5" /></div>
+              </div>
+            </div>
+          </details>
+
+          <button type="submit" class="btn btn--primary btn--full">Compare methods</button>
+        </div>
+      </form>
+
+      <div id="bfResults">
+        <div class="empty">
+          <div class="empty__icon" aria-hidden="true">◑</div>
+          <p>Enter measurements to compare all four methods.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TAB: PREP PLANNER ================= -->
+  <section class="panel" id="panel-prep" role="tabpanel" hidden>
+    <div class="page-head">
+      <div class="eyebrow">From here to there</div>
+      <h1>Goal &amp; contest prep planner</h1>
+      <p>
+        "I'm X% now and want Y% by this date." This works out the weekly rate that
+        needs, projects it week by week, and tells you plainly if the timeline is
+        asking for something that costs muscle.
+      </p>
+    </div>
+
+    <div class="split">
+      <form class="rail" id="prepForm">
+        <div class="card">
+          <div class="card__head"><h2>Your target</h2></div>
+
+          <div class="field">
+            <span class="field-label">Sex</span>
+            <div class="seg" data-seg="prepSex">
+              <button type="button" data-value="male" aria-pressed="true">Male</button>
+              <button type="button" data-value="female" aria-pressed="false">Female</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="p_weight">Current weight (kg)</label>
+            <input type="number" id="p_weight" value="85" min="25" max="300" step="0.1" />
+          </div>
+          <div class="field">
+            <label for="p_current">Current body fat %</label>
+            <input type="number" id="p_current" value="20" min="2" max="70" step="0.1" />
+          </div>
+          <div class="field">
+            <label for="p_target">Target body fat %</label>
+            <input type="number" id="p_target" value="12" min="2" max="60" step="0.1" />
+          </div>
+          <div class="field">
+            <label for="p_weeks">Weeks available</label>
+            <input type="number" id="p_weeks" value="20" min="1" max="104" />
+            <div class="field__help">
+              Weeks until your date. This is the one variable you can change for
+              free — everything else costs you muscle.
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn--primary btn--full">Project it</button>
+        </div>
+      </form>
+
+      <div id="prepResults">
+        <div class="empty">
+          <div class="empty__icon" aria-hidden="true">◒</div>
+          <p>Set a target and a deadline to see the week-by-week projection.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TAB: STRENGTH ================= -->
+  <section class="panel" id="panel-strength" role="tabpanel" hidden>
+    <div class="page-head">
+      <div class="eyebrow">Barbell maths</div>
+      <h1>Strength tools</h1>
+      <p>
+        Estimate a one-rep max from a set you actually did, turn it into a
+        percentage-based loading table, and score a powerlifting total against
+        bodyweight with DOTS and Wilks.
+      </p>
+    </div>
+
+    <div class="split">
+      <form class="rail" id="strForm">
+        <div class="card">
+          <div class="card__head"><h2>1RM estimate</h2></div>
+          <div class="row">
+            <div class="field">
+              <label for="st_weight">Weight lifted (kg)</label>
+              <input type="number" id="st_weight" value="140" min="1" max="600" step="0.5" />
+            </div>
+            <div class="field">
+              <label for="st_reps">Reps completed</label>
+              <input type="number" id="st_reps" value="5" min="1" max="20" />
+            </div>
+          </div>
+          <div class="field__help">
+            Only meaningful if the set was close to failure. Below ~10 reps is
+            most accurate — a 20-rep set measures conditioning, not max strength.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__head"><h3>Powerlifting total <span class="chip">optional</span></h3></div>
+          <div class="field">
+            <span class="field-label">Sex</span>
+            <div class="seg" data-seg="strSex">
+              <button type="button" data-value="male" aria-pressed="true">Male</button>
+              <button type="button" data-value="female" aria-pressed="false">Female</button>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="st_bw">Bodyweight (kg)</label>
+              <input type="number" id="st_bw" value="83" min="25" max="300" step="0.1" />
+            </div>
+            <div class="field">
+              <label for="st_total">Total (kg)</label>
+              <input type="number" id="st_total" value="520" min="50" max="1500" step="2.5" />
+            </div>
+          </div>
+          <div class="field__help">Squat + bench + deadlift combined.</div>
+          <button type="submit" class="btn btn--primary btn--full">Calculate</button>
+        </div>
+      </form>
+
+      <div id="strResults">
+        <div class="empty">
+          <div class="empty__icon" aria-hidden="true">◓</div>
+          <p>Enter a set to estimate your 1RM.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TAB: CLIENTS ================= -->
+  <section class="panel" id="panel-clients" role="tabpanel" hidden>
+    <div class="page-head">
+      <div class="eyebrow">Track it over time</div>
+      <h1>Clients &amp; progress</h1>
+      <p>
+        Save a client, log measurements over time, and watch the trend. A single
+        reading is noise — the line across eight weeks is the information.
+      </p>
+    </div>
+
+    <div class="split">
+      <div class="rail">
+        <div class="card">
+          <div class="card__head"><h2>New client</h2></div>
+          <form id="clientForm">
+            <div class="field">
+              <label for="c_name">Name</label>
+              <input type="text" id="c_name" required maxlength="80" placeholder="Client name" />
+            </div>
+            <div class="field">
+              <span class="field-label">Sex</span>
+              <div class="seg" data-seg="cSex">
+                <button type="button" data-value="male" aria-pressed="true">Male</button>
+                <button type="button" data-value="female" aria-pressed="false">Female</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="field"><label for="c_age">Age</label><input type="number" id="c_age" value="25" min="10" max="100" /></div>
+              <div class="field"><label for="c_height">Height (cm)</label><input type="number" id="c_height" value="172" min="100" max="250" step="0.5" /></div>
+            </div>
+            <div class="field">
+              <label for="c_diet">Diet</label>
+              <select id="c_diet"></select>
+            </div>
+            <div class="field">
+              <label for="c_goal">Goal</label>
+              <select id="c_goal"></select>
+            </div>
+            <div class="field">
+              <label for="c_notes">Notes</label>
+              <textarea id="c_notes" maxlength="2000" placeholder="Training history, injuries, preferences…"></textarea>
+            </div>
+            <button type="submit" class="btn btn--primary btn--full">Add client</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card__head"><h2>Clients</h2></div>
+          <div id="clientList"><p class="muted small">No clients yet.</p></div>
+        </div>
+      </div>
+
+      <div id="clientDetail">
+        <div class="empty">
+          <div class="empty__icon" aria-hidden="true">◔</div>
+          <p>Add a client, or pick one from the list.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TAB: MICRONUTRIENT REFERENCE ================= -->
+  <section class="panel" id="panel-learn" role="tabpanel" hidden>
+    <div class="page-head">
+      <div class="eyebrow">The part nobody covers</div>
+      <h1>Micronutrient reference</h1>
+      <p>
+        Every vitamin and mineral that matters for someone training hard: what it
+        does, why athletes and dieters fall short, what deficiency actually feels
+        like, and the best food sources. Indian RDAs (ICMR-NIN 2020) shown next to
+        the Western reference — because for iron and zinc they differ a lot, and
+        that difference is worth understanding.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card__head">
+        <h2>Reference targets</h2>
+        <div class="seg" data-seg="learnSex" style="max-width:200px">
+          <button type="button" data-value="male" aria-pressed="true">Male</button>
+          <button type="button" data-value="female" aria-pressed="false">Female</button>
+        </div>
+      </div>
+      <div id="learnPanel"><div class="spinner"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><h2>Who's at higher risk, and why</h2></div>
+      <div class="grid" id="riskDefs"></div>
+    </div>
+  </section>
+
+  <!-- ================= TAB: SOURCES ================= -->
+  <section class="panel" id="panel-sources" role="tabpanel" hidden>
+    <div class="page-head">
+      <div class="eyebrow">Show your working</div>
+      <h1>Sources &amp; standards</h1>
+      <p>
+        Every number in this toolkit traces back to one of these. If a figure here
+        disagrees with your dietitian, this list is what makes that a real
+        conversation — check the standard, not the calculator.
+      </p>
+    </div>
+    <div id="sourceList"><div class="spinner"></div></div>
+  </section>
+
+</main>
+
+<footer class="wrap no-print" style="padding-top:0">
+  <div class="disclaimer" id="disclaimerBottom"></div>
+  <p class="xs muted center">
+    Built by <a href="https://jayaprakash627.github.io" target="_blank" rel="noopener">Jayaprakash M</a>
+    · Python · FastAPI · SQLite · vanilla JS, no build step
+    · <a href="/docs" target="_blank" rel="noopener">API docs</a>
+  </p>
+</footer>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/charts.js"></script>
+<script src="/static/js/render.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

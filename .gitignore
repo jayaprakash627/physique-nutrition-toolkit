@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# The SQLite store — created on first run, holds real client data.
+# Never commit it: it's someone's bodyweight history.
+*.db
+*.db-journal
+*.sqlite3
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Local tooling
+.claude/

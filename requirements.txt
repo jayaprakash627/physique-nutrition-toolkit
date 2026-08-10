@@ -1,0 +1,7 @@
+# Core — that's genuinely all of it.
+fastapi
+uvicorn[standard]
+
+# Pydantic comes in with FastAPI and does all the input validation.
+# No database driver: SQLite ships with Python.
+# No frontend dependencies: the UI is plain HTML/CSS/JS with no build step.

@@ -1,0 +1,5 @@
+# Test-only dependencies. The app itself needs nothing beyond requirements.txt.
+-r requirements.txt
+
+pytest          # the test runner
+httpx           # required by fastapi.testclient for the API tests

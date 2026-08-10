@@ -1,0 +1,143 @@
+/* =============================================================================
+ *  theme.css — design tokens + light/dark themes
+ * =============================================================================
+ *  Same token approach and the same palette as jayaprakash627.github.io, so this
+ *  tool reads as part of the same body of work. Everything visual flows from the
+ *  custom properties below — to re-skin the app, edit this file only.
+ *
+ *  Dark is the default. Light theme is a full override, not an afterthought:
+ *  a coach may well print or screen-share this in a bright gym.
+ * ========================================================================== */
+
+:root {
+  /* ---- Type families --------------------------------------------------- */
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body:    "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- Type scale (fluid) --------------------------------------------- */
+  --fs-hero: clamp(2rem, 5vw, 3.2rem);
+  --fs-h2:   clamp(1.5rem, 3vw, 2.1rem);
+  --fs-h3:   clamp(1.15rem, 2vw, 1.4rem);
+  --fs-lead: clamp(1rem, 1.4vw, 1.15rem);
+  --fs-body: 1rem;
+  --fs-sm:   0.875rem;
+  --fs-xs:   0.75rem;
+  --fs-num:  clamp(2rem, 5vw, 3rem);   /* the big target numbers */
+
+  /* ---- Spacing --------------------------------------------------------- */
+  --sp-1: 0.25rem; --sp-2: 0.5rem;  --sp-3: 0.75rem; --sp-4: 1rem;
+  --sp-5: 1.5rem;  --sp-6: 2rem;    --sp-7: 3rem;    --sp-8: 4rem;
+
+  /* ---- Radius ---------------------------------------------------------- */
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  /* ---- Layout ---------------------------------------------------------- */
+  --container: 1240px;
+  --nav-h: 64px;
+
+  /* ---- Motion ---------------------------------------------------------- */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 160ms;
+  --dur: 320ms;
+}
+
+/* ========================== DARK THEME (default) ========================= */
+:root,
+:root[data-theme="dark"] {
+  --bg:          #0A0E14;
+  --bg-2:        #0c111a;
+  --surface:     #121821;
+  --surface-2:   #161d28;
+  --surface-3:   #1b2431;
+  --line:        rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  --text:       #E6EDF3;
+  --text-muted: #8b97a6;
+  --text-faint: #77818f;
+
+  --teal:   #5EEAD4;
+  --violet: #A78BFA;
+  --blue:   #6EA8FE;
+
+  --accent: var(--teal);
+  --gradient: linear-gradient(135deg, #5EEAD4 0%, #6EA8FE 45%, #A78BFA 100%);
+  --gradient-soft: linear-gradient(135deg, rgba(94,234,212,0.14), rgba(167,139,250,0.14));
+
+  /* Semantic — safety flags, risk bands. Tuned for AA contrast on --surface. */
+  --good:    #4ADE80;
+  --ok:      #5EEAD4;
+  --caution: #FBBF24;
+  --danger:  #F87171;
+
+  --good-bg:    rgba(74, 222, 128, 0.11);
+  --ok-bg:      rgba(94, 234, 212, 0.11);
+  --caution-bg: rgba(251, 191, 36, 0.12);
+  --danger-bg:  rgba(248, 113, 113, 0.12);
+
+  /* Macro identity colours — kept consistent everywhere a macro appears, so
+     the donut, the bars and the cards all agree without a legend. */
+  --c-protein: #6EA8FE;
+  --c-fat:     #FBBF24;
+  --c-carbs:   #5EEAD4;
+  --c-fibre:   #A78BFA;
+  --c-water:   #60A5FA;
+
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+
+/* ============================== LIGHT THEME ============================== */
+:root[data-theme="light"] {
+  --bg:          #F7F9FC;
+  --bg-2:        #eef2f8;
+  --surface:     #FFFFFF;
+  --surface-2:   #F3F6FA;
+  --surface-3:   #E8EDF5;
+  --line:        rgba(10, 14, 20, 0.10);
+  --line-strong: rgba(10, 14, 20, 0.20);
+
+  --text:       #0F1720;
+  --text-muted: #55606e;
+  --text-faint: #667283;
+
+  /* Darkened accents — the dark-theme values fail contrast on white. */
+  --teal:   #0F9E8A;
+  --violet: #7C5CE0;
+  --blue:   #2563EB;
+
+  --accent: var(--teal);
+  --gradient: linear-gradient(135deg, #0F9E8A 0%, #2563EB 45%, #7C5CE0 100%);
+  --gradient-soft: linear-gradient(135deg, rgba(15,158,138,0.10), rgba(124,92,224,0.10));
+
+  --good:    #15803D;
+  --ok:      #0F9E8A;
+  --caution: #B45309;
+  --danger:  #DC2626;
+
+  --good-bg:    rgba(21, 128, 61, 0.09);
+  --ok-bg:      rgba(15, 158, 138, 0.09);
+  --caution-bg: rgba(180, 83, 9, 0.10);
+  --danger-bg:  rgba(220, 38, 38, 0.09);
+
+  --c-protein: #2563EB;
+  --c-fat:     #B45309;
+  --c-carbs:   #0F9E8A;
+  --c-fibre:   #7C5CE0;
+  --c-water:   #2563EB;
+
+  --shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 18px 44px rgba(15, 23, 42, 0.13);
+}
+
+/* Respect a reduced-motion preference — several panels animate on open. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
