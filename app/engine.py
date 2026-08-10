@@ -610,6 +610,128 @@ def micro_report(inp: dict, *, deficit_pct: float, goal: str,
 #  Top-level assessment
 # ---------------------------------------------------------------------------
 
+def plain_summary(*, nutrition: dict, goal: str, diet: str,
+                  bf_method: str) -> dict:
+    """
+    The beginner's answer: one sentence, one priority, three actions.
+
+    Added after real user testing. The full report is accurate but it opens with
+    six target cards and a micronutrient panel — which reads as homework, not
+    help. People who have never tracked food don't need the whole picture first;
+    they need to know what to eat tomorrow, and which single number to care about
+    if they can only manage one.
+
+    So this is deliberately reductive. It names ONE priority (protein), gives
+    three concrete actions, and says what to expect. Everything else stays
+    available one click away — the depth isn't removed, just demoted.
+    """
+    kcal = nutrition["kcal"]
+    protein = nutrition["protein"]
+    carbs = nutrition["carbs"]
+    fat = nutrition["fat"]
+    water = nutrition["water"]
+    fibre = nutrition["fibre"]
+
+    rate = kcal.get("rate_kg_per_week", 0)
+
+    if goal in ("cut", "aggressive_cut"):
+        headline = f"Eat about {kcal['number']:,} calories a day to lose fat."
+        expect = (
+            f"At this intake you'd lose roughly {rate} kg a week. That's "
+            "deliberately not faster — quicker weight loss mostly costs you "
+            "muscle, so you end up smaller rather than leaner."
+        )
+        priority_why = (
+            "You're eating less than you burn, so your body is looking for "
+            "tissue to break down. Protein is the strongest signal telling it to "
+            "take that from fat and leave your muscle alone. It also keeps you "
+            "fullest, which is what makes this survivable."
+        )
+    elif goal == "bulk":
+        headline = f"Eat about {kcal['number']:,} calories a day to build muscle."
+        expect = (
+            f"You'd gain roughly {rate} kg a week. It's a small surplus on "
+            "purpose — muscle can only be built so fast, and a bigger surplus "
+            "just adds fat you'd have to diet off later."
+        )
+        priority_why = (
+            "Protein is the raw material your body stitches into new muscle. "
+            "Without enough of it, the training happens but the rebuilding "
+            "doesn't."
+        )
+    else:
+        headline = f"Eat about {kcal['number']:,} calories a day to hold steady."
+        expect = (
+            "Your weight should stay roughly where it is. This is where you "
+            "recover best and train hardest."
+        )
+        priority_why = (
+            "Protein covers daily repair and keeps you full. Getting enough now "
+            "means you're not starting from behind whenever you do decide to cut "
+            "or build."
+        )
+
+    # Three actions, ordered by how much they actually matter.
+    steps = [
+        {
+            "n": 1,
+            "do": f"Hit {protein['number']} g of protein a day",
+            "how": "Build every meal around a protein source first — eggs, "
+                   "chicken, fish, paneer, curd, dal or soya — then add the rest. "
+                   "Getting this right matters more than everything else combined.",
+        },
+        {
+            "n": 2,
+            "do": f"Drink about {water['number']} litres of fluid a day",
+            "how": "Food counts too — dal, curd, fruit and chai all add up. Check "
+                   "the colour: pale straw is right, dark yellow means you're "
+                   "behind. It's the easiest win on this list.",
+        },
+        {
+            "n": 3,
+            "do": "Weigh yourself weekly, not daily",
+            "how": "Same time each morning, then compare the weekly average "
+                   "across 2–3 weeks. Day-to-day swings of 1–2 kg are water and "
+                   "food in transit, not fat. Adjust off the trend.",
+        },
+    ]
+
+    accuracy = (
+        "This estimate came from your height, weight and age alone, which is the "
+        "roughest method — it can't tell muscle from fat, so if you train it "
+        "probably over-estimates your body fat. Adding a tape measurement takes "
+        "about 30 seconds and meaningfully improves everything downstream."
+        if bf_method == "deurenberg"
+        else
+        "Good news: your measurements let us use a better body-fat method than "
+        "height and weight alone, so these numbers are on firmer ground."
+    )
+
+    return {
+        "headline": headline,
+        "expect": expect,
+        "priority": {
+            "label": "If you only track one thing, track this",
+            "what": f"{protein['number']} g protein a day",
+            "why": priority_why,
+        },
+        "plate": (
+            f"Across the day that's roughly {protein['number']} g protein, "
+            f"{carbs['number']} g carbs and {fat['number']} g fat — plus "
+            f"{fibre['number']} g of fibre from vegetables, fruit, dal and whole "
+            "grains."
+        ),
+        "steps": steps,
+        "accuracy_note": accuracy,
+        "needs_better_measurement": bf_method == "deurenberg",
+        "reassurance": (
+            "You don't have to be perfect at this. Getting close on most days "
+            "beats being exact for a week and quitting. Nothing here is a rule — "
+            "it's a starting point you adjust using your own results."
+        ),
+    }
+
+
 def assess(inp: dict) -> dict:
     """
     Run a complete assessment.
@@ -690,6 +812,13 @@ def assess(inp: dict) -> dict:
 
     return {
         "input": inp,
+        # The beginner-facing answer comes first in the payload because it's what
+        # the UI leads with. Everything below it is the depth behind that answer.
+        "summary": plain_summary(
+            nutrition=nutrition, goal=macro_goal,
+            diet=inp.get("diet", "omnivore"),
+            bf_method=bf["chosen"]["method"],
+        ),
         "bodyfat": bf,
         "composition": comp,
         "energy": energy,

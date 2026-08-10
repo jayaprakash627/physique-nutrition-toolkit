@@ -28,6 +28,31 @@ professional.
 
 ---
 
+## 🚪 Start simple, go as deep as you want
+
+The first version of this tool put a 20-field form on the front page — including
+neck circumference and seven calliper sites — before showing a single number. I
+gave it to friends who train. They didn't use it. It was built for a coach who
+already owns callipers, not for the person who just wants to know what to eat.
+
+So the front door is now **five questions**, all things you already know: sex,
+age, weight, height, goal, activity, diet. No tape measure, no signup. You get:
+
+1. **One number** — the calories, big and unmissable
+2. **One sentence** — what that does and how fast
+3. **One priority** — "if you only track one thing, track this" (it's protein)
+4. **Three actions** — concrete things to do this week
+
+Everything else is still there, just demoted: each macro keeps its
+**"Why this number?"** panel, and one *"Show me everything"* fold opens the full
+coach's report — body-fat method comparison, how the calories were derived, body
+composition, the micronutrient panel. A **Simple / Full detail** switch in the
+header remembers which you prefer.
+
+If you skip the measurements, the plan says so and offers a 30-second tape
+measurement to sharpen it — rather than silently handing you the least accurate
+estimate as though it were fact.
+
 ## ✨ What makes it different
 
 Everything below is built around one rule: **no number ships without its
@@ -115,9 +140,11 @@ Then open **http://127.0.0.1:8000**. Interactive API docs at `/docs`.
 pip install -r requirements-dev.txt && pytest -q
 ```
 
-150 tests covering every formula against its published value, the safety
+162 tests covering every formula against its published value, the safety
 guardrails, knowledge-base integrity (every citation resolves, every nutrient is
-complete), and the API contract.
+complete), the plain-language summary for every goal — including a check that no
+internal enum like `aggressive_cut` ever leaks into text a person reads — and the
+API contract.
 
 ---
 
@@ -137,7 +164,8 @@ complete), and the API contract.
 ```
 app/
 ├── main.py         FastAPI routes — thin, no logic
-├── engine.py       assembles reports: binds every number to its explanation
+├── engine.py       assembles reports: binds every number to its explanation,
+│                   plus plain_summary() — the beginner's one-sentence answer
 ├── formulas.py     pure maths, one function per published equation
 ├── safety.py       the guardrails — flags, blocks, and why
 ├── models.py       Pydantic schemas with physiological bounds
@@ -397,10 +425,17 @@ Dark-first, matching my portfolio: `#0A0E14` background with teal `#5EEAD4`, blu
 Full light theme with **re-derived accent colours** — the dark-theme values fail
 contrast on white, so they're darkened rather than reused.
 
-Every explanation lives behind a **"Why this number?"** disclosure, so the
-interface stays clean and the depth is one click away. Charts are hand-rolled
-Canvas: device-pixel-ratio aware so they're sharp on Retina, and they re-read the
-CSS custom properties on theme toggle so they recolour in place.
+**Progressive disclosure at three levels**, which is what the redesign fixed. The
+*journey*: five questions, then the answer, then optional depth. The *page*: one
+number leads, the coach's report hides behind a fold. The *component*: every
+explanation sits behind a "Why this number?" disclosure. The original only had the
+third one, which is why it still felt like a wall.
+
+Goal and activity use **large tappable cards instead of dropdowns** — seeing all
+the options at once matters for the two choices that actually change the plan, and
+46px targets work on a phone. Charts are hand-rolled Canvas: device-pixel-ratio
+aware so they're sharp on Retina, and they re-read the CSS custom properties on
+theme toggle so they recolour in place.
 
 The print stylesheet **force-opens every collapsed panel**, so a printed client
 summary carries the reasoning rather than a page of bare numbers. That's the whole

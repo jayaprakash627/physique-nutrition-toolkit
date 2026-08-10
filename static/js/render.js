@@ -246,6 +246,183 @@ const Render = {
   },
 
   /* =========================================================================
+   *  RECAP BAR — what you entered, with a way back
+   * ====================================================================== */
+  recap(r) {
+    const i = r.input;
+    const goalWords = {
+      cut: 'losing fat', aggressive_cut: 'losing fat fast',
+      maintain: 'maintaining', bulk: 'building muscle',
+    };
+    const bits = [
+      `${i.sex === 'male' ? 'Male' : 'Female'}, ${i.age}`,
+      `${i.weight_kg} kg`,
+      `${i.height_cm} cm`,
+      goalWords[i.goal] || i.goal,
+      i.diet === 'omnivore' ? 'eats everything' : i.diet,
+    ];
+    return `
+      ${bits.map(b => `<span class="chip">${esc(b)}</span>`).join('')}
+      <span class="recap__spacer"></span>
+      <button class="btn btn--ghost btn--sm no-print" id="editInputs">Change my answers</button>`;
+  },
+
+  /* =========================================================================
+   *  SIMPLE VIEW — the default
+   *
+   *  Leads with one number and one sentence. The reasoning is still one click
+   *  away on every tile (that's the whole product), but the full report — energy
+   *  breakdown, body composition, micronutrient panel, method comparison — is
+   *  demoted behind a single "show me everything" fold.
+   * ====================================================================== */
+  simple(r) {
+    const s = r.summary;
+    const n = r.nutrition;
+    const blocked = r.safety?.blocked;
+
+    // When nothing is flagged, a single quiet line beats a full green banner.
+    const safetyBlock = (r.safety.level === 'good')
+      ? `<p class="notice-slim" style="text-align:left;margin:0 0 var(--sp-4)">
+           ✓ Nothing looks unsafe about these numbers for you.
+         </p>`
+      : this.safety(r.safety);
+
+    const tile = (block, key, name, forWhat) => `
+      <div class="tile tile--${key}">
+        <div class="tile__name">${esc(name)}</div>
+        <div class="tile__value">${num(block.number, key === 'water' ? 1 : 0)}<small> ${esc(block.unit.replace('/day', ''))}</small></div>
+        <p class="tile__for">${esc(forWhat)}</p>
+      </div>`;
+
+    return `
+      ${safetyBlock}
+
+      ${blocked ? `
+        <div class="blocked-notice">
+          Please read the warnings above before using these numbers.
+        </div>` : ''}
+
+      <!-- The answer -->
+      <div class="answer">
+        <div class="answer__kcal">${num(n.kcal.number)}</div>
+        <span class="answer__unit">calories a day</span>
+        <p class="answer__line">${esc(s.headline)}</p>
+        <p class="answer__expect">${esc(s.expect)}</p>
+      </div>
+
+      <!-- The one thing that matters most -->
+      <div class="priority">
+        <div class="priority__label">${esc(s.priority.label)}</div>
+        <div class="priority__what">${esc(s.priority.what)}</div>
+        <p class="priority__why">${esc(s.priority.why)}</p>
+      </div>
+
+      <!-- The numbers, small and scannable -->
+      <div class="card">
+        <div class="card__head">
+          <h2>Your day in four numbers</h2>
+        </div>
+        <div class="tiles">
+          ${tile(n.protein, 'protein', 'Protein', 'Builds and protects muscle. The one to get right.')}
+          ${tile(n.carbs, 'carbs', 'Carbs', 'Fuel for training. Powers your hard sets.')}
+          ${tile(n.fat, 'fat', 'Fat', 'Hormones and vitamin absorption. Not optional.')}
+          ${tile(n.fibre, 'fibre', 'Fibre', 'Digestion and staying full. From veg, fruit and dal.')}
+        </div>
+        <p class="small muted">${esc(s.plate)}</p>
+
+        <div class="stack" style="margin-top:var(--sp-5)">
+          ${['protein', 'carbs', 'fat', 'fibre', 'water'].map(k => `
+            <div class="target target--${k}" style="padding:var(--sp-4)">
+              <div class="target__label" style="margin-bottom:var(--sp-1)">
+                ${esc(n[k].why.title)} — ${num(n[k].number, k === 'water' ? 1 : 0)} ${esc(n[k].unit)}
+              </div>
+              <div class="small muted">${esc(n[k].why.headline)}</div>
+              ${this.why(n[k])}
+            </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- What to actually do -->
+      <div class="card">
+        <div class="card__head"><h2>Three things to do this week</h2></div>
+        <div class="steps">
+          ${s.steps.map(st => `
+            <div class="step">
+              <span class="step__n">${st.n}</span>
+              <div>
+                <div class="step__do">${esc(st.do)}</div>
+                <p class="step__how">${esc(st.how)}</p>
+              </div>
+            </div>`).join('')}
+        </div>
+        <div class="note">${esc(s.reassurance)}</div>
+      </div>
+
+      <!-- Meals -->
+      <div class="card">
+        <div class="card__head"><h2>Split across your meals</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Meal</th><th class="num">Protein</th><th class="num">Carbs</th><th class="num">Fat</th><th class="num">Calories</th></tr>
+            </thead>
+            <tbody>
+              ${n.meal_split.meals.map(m => `
+                <tr>
+                  <td class="strong">${esc(m.meal)}</td>
+                  <td class="num">${m.protein_g} g</td>
+                  <td class="num">${m.carb_g} g</td>
+                  <td class="num">${m.fat_g} g</td>
+                  <td class="num">${num(m.kcal)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p class="q__hint">
+          A guide, not a rule. Daily totals do most of the work — hitting your
+          numbers on a schedule you can actually keep beats a perfect split you
+          abandon.
+        </p>
+      </div>
+
+      ${s.needs_better_measurement ? `
+        <div class="upgrade">
+          <div class="upgrade__text">
+            <strong>Want a sharper estimate?</strong>
+            ${esc(s.accuracy_note)}
+          </div>
+          <button class="btn btn--ghost btn--sm no-print" id="addMeasurements">
+            Add a tape measurement
+          </button>
+        </div>` : `
+        <p class="notice-slim" style="text-align:left">${esc(s.accuracy_note)}</p>`}
+
+      <!-- Everything else, demoted -->
+      <details class="tool" style="margin-top:var(--sp-5)">
+        <summary>
+          <span class="tool__title">Show me everything</span>
+          <span class="tool__desc">
+            Body fat methods, how your calories were worked out, vitamins &amp;
+            minerals, body composition — the full coach's report
+          </span>
+        </summary>
+        <div class="tool__body">${this.fullSections(r)}</div>
+      </details>
+
+      <div class="actions no-print" style="margin-top:var(--sp-5);justify-content:center">
+        <button class="btn btn--ghost" onclick="window.print()">Print or save this plan</button>
+      </div>
+
+      <p class="notice-slim">
+        Estimates for education, not medical advice.
+        <button type="button" class="linkbtn" id="showDisclaimer2">Read the full note</button>
+      </p>
+      <div class="disclaimer" id="disclaimerInline" hidden>
+        ${esc(r.disclaimer)}<br><br>${esc(r.safeguarding)}
+      </div>`;
+  },
+
+  /* =========================================================================
    *  FULL ASSESSMENT
    * ====================================================================== */
   assessment(r) {
@@ -351,6 +528,29 @@ const Render = {
           </details>
         </div>
 
+        ${this.fullSections(r)}
+
+      </div>
+
+      <div class="disclaimer" style="margin-top:var(--sp-5)">
+        <strong>Important:</strong> ${esc(r.disclaimer)}
+      </div>
+      <div class="disclaimer">${esc(r.safeguarding)}</div>`;
+  },
+
+  /* =========================================================================
+   *  BODY FAT method comparison
+   * ====================================================================== */
+  /* =========================================================================
+   *  THE DEEP SECTIONS — energy, composition, body-fat methods, micronutrients
+   *
+   *  Extracted so both views share one implementation: the full report renders
+   *  them inline, and the simple view tucks the identical markup behind its
+   *  "show me everything" fold. The depth can never drift between the two.
+   * ====================================================================== */
+  fullSections(r) {
+    const c = r.composition;
+    return `
         <!-- ===== Energy ===== -->
         <div class="card">
           <div class="card__head"><h2>Energy — where the calories came from</h2></div>
@@ -499,18 +699,9 @@ const Render = {
 
         <!-- ===== Micronutrients ===== -->
         ${this.microCard(r.micronutrients)}
-
-      </div>
-
-      <div class="disclaimer" style="margin-top:var(--sp-5)">
-        <strong>Important:</strong> ${esc(r.disclaimer)}
-      </div>
-      <div class="disclaimer">${esc(r.safeguarding)}</div>`;
+`;
   },
 
-  /* =========================================================================
-   *  BODY FAT method comparison
-   * ====================================================================== */
   bodyfatCard(bf) {
     const shown = bf.methods.filter(m => m.method !== 'supplied');
     const maxV = Math.max(...bf.methods.map(m => m.value), 30);

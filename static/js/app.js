@@ -4,20 +4,25 @@
  *  Reads the form, calls the API, hands the response to Render, then draws any
  *  charts the new markup contains. Deliberately the only file that touches
  *  global state, so there's one place to look when behaviour is confusing.
+ *
+ *  Two-step flow on the main tab: a short question card, then results. The form
+ *  is replaced rather than sitting beside the answer, because user testing showed
+ *  a permanent 20-field sidebar reads as homework and people bounced before ever
+ *  seeing a number.
  * ========================================================================== */
 
 const State = {
-  meta: null,          // /api/meta — option lists and help text
+  meta: null,            // /api/meta — option lists and help text
   lastAssessment: null,
   activeClientId: null,
+  detail: 'simple',      // 'simple' | 'full' — how much of the report to show
 };
 
 /* =============================================================================
- *  Theme
+ *  Theme & detail level
  * ========================================================================== */
 
 function initTheme() {
-  // Remembered choice wins; otherwise follow the OS preference.
   const saved = localStorage.getItem('pnt-theme');
   const prefersLight = window.matchMedia?.('(prefers-color-scheme: light)').matches;
   setTheme(saved || (prefersLight ? 'light' : 'dark'));
@@ -26,7 +31,7 @@ function initTheme() {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     localStorage.setItem('pnt-theme', next);
-    // Canvas colours are baked in at draw time, so charts must be repainted.
+    // Canvas colours are baked in at draw time, so charts need a repaint.
     Charts.redrawAll();
   });
 }
@@ -34,6 +39,28 @@ function initTheme() {
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
   document.getElementById('themeIcon').textContent = theme === 'dark' ? '☀' : '☾';
+}
+
+/**
+ * Restore the remembered detail level.
+ *
+ * Defaults to 'simple' for anyone new. Someone who deliberately switched to full
+ * detail last time is a coach, and shouldn't have to switch again every visit.
+ */
+function initDetail() {
+  const saved = localStorage.getItem('pnt-detail');
+  if (saved === 'full' || saved === 'simple') State.detail = saved;
+
+  document.querySelectorAll('[data-seg="detail"] button').forEach(b => {
+    b.setAttribute('aria-pressed', String(b.dataset.value === State.detail));
+  });
+}
+
+function setDetail(level) {
+  State.detail = level;
+  localStorage.setItem('pnt-detail', level);
+  // Re-render the existing result rather than making them resubmit.
+  if (State.lastAssessment) showAssessment(State.lastAssessment);
 }
 
 /* =============================================================================
@@ -51,10 +78,8 @@ function initTabs() {
       document.getElementById(`panel-${tab.dataset.tab}`).hidden = false;
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
-      // Lazy-load the tabs whose content comes from the API.
-      if (tab.dataset.tab === 'sources') loadSources();
       if (tab.dataset.tab === 'learn') loadLearn();
-      if (tab.dataset.tab === 'clients') loadClients();
+      if (tab.dataset.tab === 'coach') loadClients();
 
       // A chart inside a hidden panel measures its container as 0 wide, so
       // anything drawn while hidden needs a repaint once it's visible.
@@ -64,7 +89,7 @@ function initTabs() {
 }
 
 /* =============================================================================
- *  Bootstrap — populate every dropdown from /api/meta
+ *  Bootstrap
  * ========================================================================== */
 
 async function loadMeta() {
@@ -85,101 +110,66 @@ async function loadMeta() {
     }).join('');
   };
 
-  fill('goal', m.goals, 'cut');
-  fill('activity', m.activity_levels, 'moderate');
-  fill('diet', m.diets, 'omnivore');
   fill('climate', m.climates, 'hot');
   fill('c_diet', m.diets, 'omnivore');
   fill('c_goal', m.goals, 'cut');
 
   document.getElementById('disclaimerTop').innerHTML =
-    `<strong>Read this first:</strong> ${esc(m.disclaimer)}`;
+    `${esc(m.disclaimer)}<br><br>${esc(m.safeguarding)}`;
   document.getElementById('disclaimerBottom').innerHTML =
-    `<strong>Not medical advice.</strong> ${esc(m.disclaimer)} <br><br>${esc(m.safeguarding)}`;
-
-  document.getElementById('techniqueHint').textContent = m.measurement_help.technique;
+    `<strong>Not medical advice.</strong> ${esc(m.disclaimer)}<br><br>${esc(m.safeguarding)}`;
 
   const g = m.measurement_help.girths;
   document.getElementById('girthHelp').innerHTML =
     `<strong>Neck:</strong> ${esc(g.neck)}<br>
      <strong>Waist:</strong> ${esc(g.waist)}<br>
-     <strong>Hip:</strong> ${esc(g.hip)}`;
+     <strong>Hip:</strong> ${esc(g.hip)} <em>(women only — the equation needs it)</em>`;
 
-  const s = m.measurement_help.skinfolds;
-  document.getElementById('skinfoldHelp').innerHTML =
-    Object.entries(s).map(([k, v]) =>
-      `<strong>${esc(k)}:</strong> ${esc(v)}`).join('<br>');
+  const sk = m.measurement_help.skinfolds;
+  const skHelp = document.getElementById('skinfoldHelp');
+  if (skHelp) {
+    skHelp.innerHTML = Object.entries(sk)
+      .map(([k, v]) => `<strong>${esc(k)}:</strong> ${esc(v)}`).join('<br>');
+  }
 
   updateSexDependentUI();
 }
 
 /**
- * Show only the fields the chosen sex actually needs.
- *
- * This isn't cosmetic: the Navy equation needs hip circumference for women and
- * not for men, and the JP 3-site equations use different sites per sex. Showing
- * all of them invites people to fill in fields that will be ignored.
+ * Hip circumference is only used by the female Navy equation, so hide it for
+ * men rather than inviting them to fill a field that gets ignored.
  */
 function updateSexDependentUI() {
-  const sex = segValue('sex');
-  const hipField = document.getElementById('hipField');
-  if (hipField) {
-    hipField.style.display = sex === 'female' ? '' : 'none';
-    if (sex === 'female') {
-      hipField.querySelector('label').innerHTML = 'Hip (cm) <span style="color:var(--caution)">*</span>';
-    }
-  }
-
-  // Mark the 3-site skinfolds this sex needs.
-  const needed = sex === 'male'
-    ? ['s_chest', 's_abdomen', 's_thigh']
-    : ['s_triceps', 's_suprailiac', 's_thigh'];
-  ['s_chest', 's_abdomen', 's_thigh', 's_triceps', 's_suprailiac'].forEach(id => {
-    const label = document.querySelector(`label[for="${id}"]`);
-    if (!label) return;
-    const base = label.textContent.replace(' ★', '');
-    label.textContent = needed.includes(id) ? base + ' ★' : base;
-  });
+  const hip = document.getElementById('hipField');
+  if (hip) hip.style.display = segValue('sex') === 'female' ? '' : 'none';
 }
 
 /* =============================================================================
- *  Full assessment
+ *  The main flow: short form → results
  * ========================================================================== */
 
-function assessPayload() {
+function quickPayload() {
   const girths = {
     neck: numVal('g_neck'),
     waist: numVal('g_waist'),
     hip: numVal('g_hip'),
   };
-  const skinfolds = {
-    chest: numVal('s_chest'),
-    abdomen: numVal('s_abdomen'),
-    thigh: numVal('s_thigh'),
-    triceps: numVal('s_triceps'),
-    suprailiac: numVal('s_suprailiac'),
-    subscapular: numVal('s_subscapular'),
-    midaxillary: numVal('s_midaxillary'),
-  };
-
-  // Send null rather than an all-null object, so the backend's "did they give me
-  // anything?" checks stay simple.
   const anyGirth = Object.values(girths).some(v => v !== null);
-  const anySkin = Object.values(skinfolds).some(v => v !== null);
 
   return {
     sex: segValue('sex'),
     age: numVal('age'),
     weight_kg: numVal('weight'),
     height_cm: numVal('height'),
-    goal: document.getElementById('goal').value,
-    activity: document.getElementById('activity').value,
-    diet: document.getElementById('diet').value,
-    climate: document.getElementById('climate').value,
-    training_hours: numVal('trainingHours') ?? 0,
-    meals: numVal('meals') ?? 4,
+    goal: segValue('goal'),
+    activity: segValue('activity'),
+    diet: segValue('diet'),
+    // Fine-tune fields, all with sensible defaults so skipping them is fine.
+    climate: document.getElementById('climate').value || 'hot',
+    training_hours: numVal('trainingHours') ?? 1,
+    meals: numVal('meals') ?? 3,
     girths: anyGirth ? girths : null,
-    skinfolds: anySkin ? skinfolds : null,
+    skinfolds: null,            // callipers live in the Extra tools tab
     bodyfat_pct: numVal('bodyfatPct'),
     target_bodyfat_pct: numVal('targetBf'),
     contest_prep: document.getElementById('contestPrep').checked,
@@ -188,56 +178,74 @@ function assessPayload() {
   };
 }
 
-async function runAssessment(e) {
+async function runQuick(e) {
   e.preventDefault();
-  const btn = document.getElementById('assessBtn');
-  const out = document.getElementById('assessResults');
-
+  const btn = document.getElementById('quickBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Building…';
-  out.innerHTML = '<div class="card center"><div class="spinner" style="margin:0 auto"></div></div>';
+  btn.innerHTML = '<span class="spinner"></span> Working it out…';
 
   try {
-    const r = await API.assess(assessPayload());
+    const r = await API.assess(quickPayload());
     State.lastAssessment = r;
+    showAssessment(r);
 
-    Charts.reset();
-    out.innerHTML = Render.assessment(r);
-
-    // Draw the macro donut now that its canvas exists in the DOM.
-    const n = r.nutrition;
-    Charts.donut(
-      document.getElementById('macroDonut'),
-      [
-        { value: n.protein.kcal, colorVar: '--c-protein' },
-        { value: n.fat.kcal, colorVar: '--c-fat' },
-        { value: n.carbs.kcal, colorVar: '--c-carbs' },
-      ],
-      num(n.kcal.number),
-      'kcal/day',
-    );
-
-    out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Swap the form out for the answer.
+    document.getElementById('startStep').hidden = true;
+    document.getElementById('resultStep').hidden = false;
+    window.scrollTo({ top: 0, behavior: 'instant' });
   } catch (err) {
-    out.innerHTML = `<div class="card"><div class="flag flag--danger">
-      <div class="flag__title"><span class="flag__level">error</span>Couldn't build the plan</div>
-      <p class="flag__msg">${esc(err.message)}</p>
-    </div></div>`;
     toast(err.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Build my plan';
+    btn.textContent = 'Show my numbers →';
   }
 }
 
+/** Render whichever detail level is active, then draw its charts. */
+function showAssessment(r) {
+  const out = document.getElementById('planResults');
+  document.getElementById('recap').innerHTML = Render.recap(r);
+
+  Charts.reset();
+  out.innerHTML = State.detail === 'full' ? Render.assessment(r) : Render.simple(r);
+
+  // The donut only exists in the full view.
+  const donut = document.getElementById('macroDonut');
+  if (donut) {
+    const n = r.nutrition;
+    Charts.donut(donut, [
+      { value: n.protein.kcal, colorVar: '--c-protein' },
+      { value: n.fat.kcal, colorVar: '--c-fat' },
+      { value: n.carbs.kcal, colorVar: '--c-carbs' },
+    ], num(n.kcal.number), 'kcal/day');
+  }
+}
+
+/** Go back to the questions, keeping every answer as it was. */
+function editInputs() {
+  document.getElementById('resultStep').hidden = true;
+  document.getElementById('startStep').hidden = false;
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
+/** From the accuracy prompt: back to the form with the tape fields open. */
+function jumpToMeasurements() {
+  editInputs();
+  const fold = document.getElementById('fineTune');
+  fold.open = true;
+  const neck = document.getElementById('g_neck');
+  fold.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => neck.focus(), 350);
+}
+
 /* =============================================================================
- *  Body fat comparison
+ *  Extra tools
  * ========================================================================== */
 
 async function runBodyfat(e) {
   e.preventDefault();
   const out = document.getElementById('bfResults');
-  out.innerHTML = '<div class="card center"><div class="spinner" style="margin:0 auto"></div></div>';
+  out.innerHTML = '<div class="center"><div class="spinner" style="margin:0 auto"></div></div>';
 
   const girths = { neck: numVal('bf_neck'), waist: numVal('bf_waist'), hip: numVal('bf_hip') };
   const skinfolds = {
@@ -255,30 +263,25 @@ async function runBodyfat(e) {
       girths: Object.values(girths).some(v => v !== null) ? girths : null,
       skinfolds: Object.values(skinfolds).some(v => v !== null) ? skinfolds : null,
     });
-
     if (!r.chosen) {
-      out.innerHTML = `<div class="card"><div class="empty">
+      out.innerHTML = `<div class="empty">
         <p>No method could run with those inputs. Add neck and waist, or three skinfolds.</p>
-      </div></div>`;
+      </div>`;
       return;
     }
     Charts.reset();
     out.innerHTML = Render.bodyfatCard(r);
   } catch (err) {
-    out.innerHTML = `<div class="card"><div class="flag flag--danger">
+    out.innerHTML = `<div class="flag flag--danger">
       <div class="flag__title"><span class="flag__level">error</span>Couldn't compare methods</div>
-      <p class="flag__msg">${esc(err.message)}</p></div></div>`;
+      <p class="flag__msg">${esc(err.message)}</p></div>`;
   }
 }
-
-/* =============================================================================
- *  Prep planner
- * ========================================================================== */
 
 async function runPrep(e) {
   e.preventDefault();
   const out = document.getElementById('prepResults');
-  out.innerHTML = '<div class="card center"><div class="spinner" style="margin:0 auto"></div></div>';
+  out.innerHTML = '<div class="center"><div class="spinner" style="margin:0 auto"></div></div>';
 
   try {
     const r = await API.prepPlan({
@@ -292,48 +295,38 @@ async function runPrep(e) {
     Charts.reset();
     out.innerHTML = Render.prep(r);
 
-    // Two series on one axis: body fat % and weight in kg. Their ranges differ
-    // wildly (12–20 vs 75–85), so the chart normalises weight onto the body-fat
-    // scale for shape comparison — the table beside it carries exact values.
+    // Body fat % and weight in kg live on wildly different scales, so weight is
+    // normalised onto the body-fat axis for shape comparison. The table beside
+    // the chart carries the exact values.
     const proj = r.plan.projection;
-    const bfPoints = proj.map(p => ({ x: p.week, y: p.bodyfat_pct }));
+    const bf = proj.map(p => ({ x: p.week, y: p.bodyfat_pct }));
     const wMin = Math.min(...proj.map(p => p.weight_kg));
     const wMax = Math.max(...proj.map(p => p.weight_kg));
-    const bMin = Math.min(...bfPoints.map(p => p.y));
-    const bMax = Math.max(...bfPoints.map(p => p.y));
-    const scaleW = w => (wMax === wMin)
+    const bMin = Math.min(...bf.map(p => p.y));
+    const bMax = Math.max(...bf.map(p => p.y));
+    const scale = w => (wMax === wMin)
       ? (bMin + bMax) / 2
       : bMin + ((w - wMin) / (wMax - wMin)) * (bMax - bMin);
 
-    Charts.line(
-      document.getElementById('prepChart'),
-      [
-        { label: 'Body fat %', points: bfPoints, colorVar: '--c-carbs' },
-        {
-          label: 'Weight (scaled)',
-          points: proj.map(p => ({ x: p.week, y: scaleW(p.weight_kg) })),
-          colorVar: '--c-protein',
-          dashed: true,
-        },
-      ],
-      { xLabel: 'Week', yLabel: 'Body fat', yUnit: '%' },
-    );
+    Charts.line(document.getElementById('prepChart'), [
+      { label: 'Body fat %', points: bf, colorVar: '--c-carbs' },
+      {
+        label: 'Weight (scaled)',
+        points: proj.map(p => ({ x: p.week, y: scale(p.weight_kg) })),
+        colorVar: '--c-protein', dashed: true,
+      },
+    ], { xLabel: 'Week', yLabel: 'Body fat', yUnit: '%' });
   } catch (err) {
-    out.innerHTML = `<div class="card"><div class="flag flag--danger">
+    out.innerHTML = `<div class="flag flag--danger">
       <div class="flag__title"><span class="flag__level">error</span>Couldn't build the projection</div>
-      <p class="flag__msg">${esc(err.message)}</p></div></div>`;
+      <p class="flag__msg">${esc(err.message)}</p></div>`;
   }
 }
-
-/* =============================================================================
- *  Strength
- * ========================================================================== */
 
 async function runStrength(e) {
   e.preventDefault();
   const out = document.getElementById('strResults');
-  out.innerHTML = '<div class="card center"><div class="spinner" style="margin:0 auto"></div></div>';
-
+  out.innerHTML = '<div class="center"><div class="spinner" style="margin:0 auto"></div></div>';
   try {
     const r = await API.strength({
       weight: numVal('st_weight'),
@@ -344,57 +337,52 @@ async function runStrength(e) {
     });
     out.innerHTML = Render.strength(r);
   } catch (err) {
-    out.innerHTML = `<div class="card"><div class="flag flag--danger">
+    out.innerHTML = `<div class="flag flag--danger">
       <div class="flag__title"><span class="flag__level">error</span>Couldn't calculate</div>
-      <p class="flag__msg">${esc(err.message)}</p></div></div>`;
+      <p class="flag__msg">${esc(err.message)}</p></div>`;
   }
 }
 
 /* =============================================================================
- *  Sources tab
+ *  Learn tab
  * ========================================================================== */
 
 let _sourcesLoaded = false;
-async function loadSources() {
-  if (_sourcesLoaded) return;
-  try {
-    const r = await API.sources();
-    document.getElementById('sourceList').innerHTML = Render.sources(r);
-    _sourcesLoaded = true;
-  } catch (e) {
-    document.getElementById('sourceList').innerHTML =
-      `<div class="card"><p class="muted">${esc(e.message)}</p></div>`;
-  }
-}
-
-/* =============================================================================
- *  Micronutrient reference tab
- * ========================================================================== */
+let _learnLoadedFor = null;
 
 async function loadLearn() {
   const sex = segValue('learnSex') || 'male';
-  const panel = document.getElementById('learnPanel');
-  panel.innerHTML = '<div class="spinner"></div>';
-  try {
-    const r = await API.micronutrients(sex);
-    panel.innerHTML = Render.microRows(r.panel);
 
-    document.getElementById('riskDefs').innerHTML =
-      Object.entries(r.risk_definitions).map(([, v]) => `
-        <div class="risk-card">
-          <div class="risk-card__label">${esc(v.label)}</div>
-          <p class="risk-card__why">${esc(v.why)}</p>
-          <div class="pills" style="margin-top:var(--sp-3)">
-            ${v.watch.map(w => `<span class="chip">${esc(w.replace(/_/g, ' '))}</span>`).join('')}
-          </div>
-        </div>`).join('');
-  } catch (e) {
-    panel.innerHTML = `<p class="muted">${esc(e.message)}</p>`;
+  if (_learnLoadedFor !== sex) {
+    const panel = document.getElementById('learnPanel');
+    panel.innerHTML = '<div class="spinner"></div>';
+    try {
+      const r = await API.micronutrients(sex);
+      panel.innerHTML = Render.microRows(r.panel);
+      document.getElementById('riskDefs').innerHTML =
+        Object.entries(r.risk_definitions).map(([, v]) => `
+          <div class="risk-card">
+            <div class="risk-card__label">${esc(v.label)}</div>
+            <p class="risk-card__why">${esc(v.why)}</p>
+          </div>`).join('');
+      _learnLoadedFor = sex;
+    } catch (e) {
+      panel.innerHTML = `<p class="muted">${esc(e.message)}</p>`;
+    }
+  }
+
+  if (!_sourcesLoaded) {
+    try {
+      document.getElementById('sourceList').innerHTML = Render.sources(await API.sources());
+      _sourcesLoaded = true;
+    } catch (e) {
+      document.getElementById('sourceList').innerHTML = `<p class="muted">${esc(e.message)}</p>`;
+    }
   }
 }
 
 /* =============================================================================
- *  Clients & tracking
+ *  Coach mode: clients & tracking
  * ========================================================================== */
 
 async function loadClients() {
@@ -417,12 +405,11 @@ async function openClient(id) {
     Charts.reset();
     out.innerHTML = Render.clientDetail(d);
 
-    // Default the date field to today, so logging is one field less.
     const dateEl = document.getElementById('m_date');
     if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
 
-    // Trend chart — x is days since the first measurement, so unevenly spaced
-    // weigh-ins plot at their true distance apart rather than evenly.
+    // x is days since the first measurement, so unevenly spaced weigh-ins plot
+    // at their true distance apart.
     if (d.measurements.length >= 2) {
       const t0 = new Date(d.measurements[0].taken_on).getTime();
       const days = m => (new Date(m.taken_on).getTime() - t0) / 86400000;
@@ -435,7 +422,6 @@ async function openClient(id) {
 
       const withBf = d.measurements.filter(m => m.bodyfat_pct !== null);
       if (withBf.length >= 2) {
-        // Scale body fat onto the weight axis so both fit one chart.
         const wVals = d.measurements.map(m => m.weight_kg);
         const wMin = Math.min(...wVals), wMax = Math.max(...wVals);
         const bVals = withBf.map(m => m.bodyfat_pct);
@@ -447,8 +433,7 @@ async function openClient(id) {
             y: bMax === bMin ? (wMin + wMax) / 2
               : wMin + ((m.bodyfat_pct - bMin) / (bMax - bMin)) * (wMax - wMin),
           })),
-          colorVar: '--c-carbs',
-          dashed: true,
+          colorVar: '--c-carbs', dashed: true,
         });
       }
 
@@ -456,7 +441,7 @@ async function openClient(id) {
         { xLabel: 'Days since first measurement', yLabel: 'Weight', yUnit: 'kg' });
     }
 
-    await loadClients();   // refresh the list so the active item highlights
+    await loadClients();
   } catch (e) {
     out.innerHTML = `<div class="card"><p class="muted">${esc(e.message)}</p></div>`;
   }
@@ -505,14 +490,16 @@ async function addMeasurement(e) {
 }
 
 /**
- * Delegated click handling for the clients panel.
+ * Delegated events for the coach panel.
  *
- * The client list and detail view are both re-rendered wholesale, so binding
- * listeners to individual buttons would mean re-binding after every render.
- * One listener on the panel handles all of them and survives re-renders.
+ * The client list and detail view are re-rendered wholesale, so per-button
+ * listeners would need re-binding after every render. One listener on the panel
+ * handles all of them and survives re-renders.
  */
 function initClientEvents() {
-  document.getElementById('panel-clients').addEventListener('click', async e => {
+  const panel = document.getElementById('panel-coach');
+
+  panel.addEventListener('click', async e => {
     const pick = e.target.closest('[data-client]');
     if (pick && !e.target.closest('form')) {
       openClient(Number(pick.dataset.client));
@@ -544,8 +531,7 @@ function initClientEvents() {
     }
   });
 
-  // Submit handler for the measurement form, which is also re-rendered.
-  document.getElementById('panel-clients').addEventListener('submit', e => {
+  panel.addEventListener('submit', e => {
     if (e.target.id === 'measForm') addMeasurement(e);
   });
 }
@@ -556,19 +542,34 @@ function initClientEvents() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
+  initDetail();
   initTabs();
 
-  initSegs((name) => {
+  initSegs((name, value) => {
     if (name === 'sex') updateSexDependentUI();
     if (name === 'learnSex') loadLearn();
+    if (name === 'detail') setDetail(value);
   });
 
-  document.getElementById('assessForm').addEventListener('submit', runAssessment);
+  document.getElementById('quickForm').addEventListener('submit', runQuick);
   document.getElementById('bfForm').addEventListener('submit', runBodyfat);
   document.getElementById('prepForm').addEventListener('submit', runPrep);
   document.getElementById('strForm').addEventListener('submit', runStrength);
   document.getElementById('clientForm').addEventListener('submit', createClient);
   initClientEvents();
+
+  // Buttons that live inside re-rendered markup, handled by delegation.
+  document.getElementById('panel-plan').addEventListener('click', e => {
+    if (e.target.closest('#editInputs')) editInputs();
+    if (e.target.closest('#addMeasurements')) jumpToMeasurements();
+    const d = e.target.closest('#showDisclaimer, #showDisclaimer2');
+    if (d) {
+      const box = document.getElementById(
+        d.id === 'showDisclaimer' ? 'disclaimerTop' : 'disclaimerInline');
+      box.hidden = !box.hidden;
+      d.textContent = box.hidden ? 'Read the full note' : 'Hide';
+    }
+  });
 
   await loadMeta();
 });

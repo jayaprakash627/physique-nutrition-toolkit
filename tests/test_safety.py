@@ -270,3 +270,83 @@ def test_prep_report_accepts_a_reasonable_timeline():
         target_bodyfat_pct=14, weeks=14,
     ))
     assert r["safety"]["blocked"] is False
+
+
+# ---------------------------------------------------------------------------
+#  Plain-language summary
+#
+#  Added when user feedback said the full report was overwhelming. The summary is
+#  what a beginner reads first, so it has to be complete for every goal and never
+#  leak a raw enum ("aggressive_cut") into text a person reads.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("goal", ["cut", "aggressive_cut", "maintain", "bulk"])
+def test_summary_is_complete_for_every_goal(goal):
+    r = engine.assess({**BASE, "goal": goal})
+    s = r["summary"]
+
+    assert s["headline"].startswith("Eat about")
+    assert len(s["expect"]) > 80
+    assert s["priority"]["what"].endswith("protein a day")
+    assert len(s["priority"]["why"]) > 100
+    assert len(s["steps"]) == 3
+    assert all(st["do"] and len(st["how"]) > 60 for st in s["steps"])
+    assert len(s["reassurance"]) > 80
+    assert len(s["accuracy_note"]) > 80
+
+
+@pytest.mark.parametrize("goal", ["cut", "aggressive_cut", "maintain", "bulk"])
+def test_summary_never_leaks_internal_enum_names(goal):
+    """
+    "aggressive_cut" is an API value, not English. Any of these appearing in
+    reader-facing copy is a bug.
+    """
+    s = engine.assess({**BASE, "goal": goal})["summary"]
+    text = " ".join([
+        s["headline"], s["expect"], s["plate"], s["reassurance"],
+        s["accuracy_note"], s["priority"]["what"], s["priority"]["why"],
+        *[st["do"] + st["how"] for st in s["steps"]],
+    ])
+    for leak in ("aggressive_cut", "very_hot", "eggetarian", "g_per_kg", "None", "_"):
+        assert leak not in text, f"{goal}: leaked {leak!r} into user-facing copy"
+
+
+def test_summary_headline_matches_the_calorie_target():
+    """The headline number must be the same one the rest of the report uses."""
+    r = engine.assess(BASE)
+    kcal = r["nutrition"]["kcal"]["number"]
+    assert f"{kcal:,}" in r["summary"]["headline"]
+
+
+def test_summary_priority_matches_the_protein_target():
+    r = engine.assess(BASE)
+    grams = r["nutrition"]["protein"]["number"]
+    assert str(grams) in r["summary"]["priority"]["what"]
+    assert str(grams) in r["summary"]["steps"][0]["do"]
+
+
+def test_summary_flags_when_only_bmi_estimation_ran():
+    """
+    With no measurements we fall back to Deurenberg, which can't tell muscle from
+    fat — the summary has to say so and prompt for a tape measurement.
+    """
+    no_measurements = {**BASE, "girths": None, "skinfolds": None, "bodyfat_pct": None}
+    s = engine.assess(no_measurements)["summary"]
+    assert s["needs_better_measurement"] is True
+    assert "tape" in s["accuracy_note"].lower()
+
+    with_tape = {**BASE, "girths": {"neck": 39, "waist": 85, "hip": None}}
+    s2 = engine.assess(with_tape)["summary"]
+    assert s2["needs_better_measurement"] is False
+
+
+def test_summary_direction_matches_the_goal():
+    cut = engine.assess({**BASE, "goal": "cut"})["summary"]
+    bulk = engine.assess({**BASE, "goal": "bulk"})["summary"]
+    maintain = engine.assess({**BASE, "goal": "maintain"})["summary"]
+
+    assert "lose fat" in cut["headline"]
+    assert "lose" in cut["expect"]
+    assert "build muscle" in bulk["headline"]
+    assert "gain" in bulk["expect"]
+    assert "steady" in maintain["headline"]

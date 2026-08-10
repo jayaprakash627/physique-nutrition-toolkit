@@ -770,6 +770,361 @@ canvas { display: block; width: 100%; height: auto; }
 
 .actions { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 
+/* =============================================================================
+ *  THE SIMPLE FLOW
+ * =============================================================================
+ *  Added after user testing said the original was overwhelming. The old front
+ *  door was a 20-field form in a sidebar; this is a short, centred, one-question
+ *  -at-a-time card, then a results page that leads with a single sentence.
+ *
+ *  The guiding rule: nothing on screen before the answer except what's needed to
+ *  get the answer.
+ * ========================================================================== */
+
+/* ---- Hero ---------------------------------------------------------------- */
+.hero {
+  max-width: 620px;
+  margin: var(--sp-6) auto var(--sp-6);
+  text-align: center;
+}
+.hero h1 {
+  font-size: clamp(2.1rem, 6vw, 3.4rem);
+  margin-bottom: var(--sp-4);
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero__sub {
+  font-size: var(--fs-lead);
+  color: var(--text);
+  margin-bottom: var(--sp-3);
+}
+.hero__promise {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-bottom: 0;
+}
+
+/* ---- The question card -------------------------------------------------- */
+.quickcard {
+  max-width: 620px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-6);
+  box-shadow: var(--shadow);
+}
+@media (max-width: 560px) {
+  .quickcard { padding: var(--sp-4); border-radius: var(--radius); }
+}
+
+/* One numbered question block. Generous spacing so it reads as a sequence of
+   small asks rather than a dense form. */
+.q { margin-bottom: var(--sp-6); }
+.q:last-of-type { margin-bottom: var(--sp-5); }
+
+.q__label {
+  display: flex; align-items: center; gap: var(--sp-3);
+  font-family: var(--font-display);
+  font-size: 1.05rem; font-weight: 600;
+  margin-bottom: var(--sp-3);
+}
+.q__n {
+  display: grid; place-items: center;
+  width: 24px; height: 24px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--gradient-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
+}
+.q__hint {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  margin: var(--sp-3) 0 0;
+  line-height: 1.6;
+}
+
+/* Compact labelled input — label above, unit inline, no separate help text. */
+.minifield { display: block; }
+.minifield > span {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+  font-weight: 500;
+}
+.minifield em {
+  font-style: normal;
+  color: var(--text-faint);
+  text-transform: none;
+}
+.minifield input { text-align: center; font-size: 1rem; padding: 0.65rem 0.5rem; }
+
+.row--3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 460px) {
+  .row--3 { grid-template-columns: 1fr 1fr; }
+}
+
+/* Big tappable choice cards, replacing <select> for the two decisions that
+   actually change the plan. Seeing all options at once beats a dropdown. */
+.cards {
+  display: grid;
+  gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+.cards--stack { grid-template-columns: 1fr; gap: var(--sp-2); }
+
+.cards button {
+  display: flex; flex-direction: column; gap: 2px;
+  text-align: left;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  transition: all var(--dur-fast) var(--ease);
+}
+.cards button strong {
+  font-family: var(--font-display);
+  font-size: 0.95rem; font-weight: 600;
+  color: var(--text);
+}
+.cards button span { font-size: var(--fs-xs); line-height: 1.4; }
+.cards button:hover { border-color: var(--line-strong); background: var(--surface-3); }
+.cards button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--gradient-soft);
+}
+.cards button[aria-pressed="true"] strong { color: var(--accent); }
+
+.cards--stack button { flex-direction: row; align-items: baseline; gap: var(--sp-3); }
+.cards--stack button strong { min-width: 120px; }
+
+/* Larger segmented control for the first question. */
+.seg--lg button { padding: 0.7rem 0.5rem; font-size: 1rem; }
+.seg--nav { padding: 2px; }
+.seg--nav button { padding: 0.35rem 0.7rem; font-size: var(--fs-xs); }
+@media (max-width: 720px) { .seg--nav { display: none; } }
+
+.btn--hero {
+  width: 100%;
+  padding: 0.95rem 1.5rem;
+  font-size: 1.02rem;
+  border-radius: var(--radius);
+}
+
+/* A fold that doesn't shout — for genuinely optional extras. */
+.fold--quiet {
+  border-style: dashed;
+  margin-top: var(--sp-5);
+  background: transparent;
+}
+.fold--quiet > summary { color: var(--text-muted); font-size: var(--fs-sm); }
+.fold--quiet > summary:hover { color: var(--text); }
+
+.rule { border: none; border-top: 1px solid var(--line); margin: var(--sp-5) 0; }
+
+/* ---- Slim disclaimer strip --------------------------------------------- */
+.notice-slim {
+  max-width: 620px;
+  margin: var(--sp-5) auto 0;
+  text-align: center;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+.linkbtn {
+  background: none; border: none; padding: 0;
+  color: var(--accent); font-size: inherit;
+  text-decoration: underline; cursor: pointer;
+}
+
+/* ---- Recap bar (what you entered) -------------------------------------- */
+.recap {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  margin-bottom: var(--sp-5);
+  font-size: var(--fs-sm);
+}
+.recap__spacer { flex: 1; }
+@media (max-width: 620px) {
+  .recap { border-radius: var(--radius); }
+  .recap__spacer { display: none; }
+}
+
+/* ---- The answer --------------------------------------------------------- */
+.answer {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-6);
+  margin-bottom: var(--sp-4);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.answer::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+  background: var(--gradient);
+}
+.answer__kcal {
+  font-family: var(--font-mono);
+  font-size: clamp(2.8rem, 10vw, 4.6rem);
+  font-weight: 700; line-height: 1;
+  letter-spacing: -0.04em;
+  background: var(--gradient);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.answer__unit {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm); color: var(--text-muted);
+  display: block; margin-top: var(--sp-2);
+}
+.answer__line {
+  font-family: var(--font-display);
+  font-size: var(--fs-h3); font-weight: 500;
+  margin: var(--sp-4) auto 0;
+  max-width: 32ch;
+}
+.answer__expect {
+  font-size: var(--fs-sm); color: var(--text-muted);
+  max-width: 56ch; margin: var(--sp-4) auto 0;
+  line-height: 1.7;
+}
+
+/* The single priority callout — the one thing to do if you do nothing else. */
+.priority {
+  background: var(--gradient-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+.priority__label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs); letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: var(--sp-3);
+}
+.priority__what {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 4vw, 2rem); font-weight: 700;
+  letter-spacing: -0.02em; margin-bottom: var(--sp-3);
+}
+.priority__why {
+  font-size: 0.94rem; color: var(--text-muted);
+  line-height: 1.7; max-width: 62ch; margin: 0;
+}
+
+/* Three simple macro tiles. */
+.tiles {
+  display: grid; gap: var(--sp-3);
+  /* 120px keeps two tiles per row on a 375px phone rather than collapsing to a
+     single tall column — four stacked full-width tiles reads as a list, and the
+     point of these is to be glanceable together. */
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  margin-bottom: var(--sp-4);
+}
+@media (min-width: 700px) {
+  .tiles { grid-template-columns: repeat(4, 1fr); }
+}
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--tint, var(--accent));
+  border-radius: var(--radius-sm);
+  padding: var(--sp-4);
+}
+.tile--protein { --tint: var(--c-protein); }
+.tile--fat     { --tint: var(--c-fat); }
+.tile--carbs   { --tint: var(--c-carbs); }
+.tile--fibre   { --tint: var(--c-fibre); }
+.tile--water   { --tint: var(--c-water); }
+
+.tile__name {
+  font-size: var(--fs-xs); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--tint); margin-bottom: var(--sp-2);
+}
+.tile__value {
+  font-family: var(--font-mono);
+  font-size: 1.9rem; font-weight: 700; line-height: 1;
+  letter-spacing: -0.03em; margin-bottom: var(--sp-2);
+}
+.tile__value small { font-size: var(--fs-sm); font-weight: 400; color: var(--text-muted); }
+.tile__for { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.5; margin: 0; }
+
+/* Numbered action steps. */
+.steps { display: grid; gap: var(--sp-3); }
+.step {
+  display: flex; gap: var(--sp-4);
+  padding: var(--sp-4);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.step__n {
+  display: grid; place-items: center;
+  width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--gradient);
+  color: #06121a;
+  font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem;
+}
+.step__do {
+  font-family: var(--font-display); font-weight: 600;
+  font-size: 1rem; margin-bottom: var(--sp-2);
+}
+.step__how { font-size: 0.9rem; color: var(--text-muted); line-height: 1.65; margin: 0; }
+
+/* Prompt to improve accuracy — shown when only BMI-based estimation ran. */
+.upgrade {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--caution-bg);
+  border: 1px dashed color-mix(in srgb, var(--caution) 45%, transparent);
+  border-radius: var(--radius);
+  margin-bottom: var(--sp-4);
+}
+.upgrade__text { flex: 1; min-width: 240px; font-size: 0.9rem; color: var(--text-muted); }
+.upgrade__text strong { color: var(--text); display: block; margin-bottom: 2px; }
+
+/* ---- Collapsible tool / detail sections -------------------------------- */
+.tool {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+}
+.tool > summary {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--sp-5);
+  cursor: pointer; list-style: none;
+  position: relative;
+  padding-right: var(--sp-8);
+}
+.tool > summary::-webkit-details-marker { display: none; }
+.tool > summary::after {
+  content: "+";
+  position: absolute; right: var(--sp-5); top: 50%; transform: translateY(-50%);
+  font-family: var(--font-mono); font-size: 1.4rem;
+  color: var(--text-muted);
+}
+.tool[open] > summary::after { content: "−"; }
+.tool > summary:hover { background: var(--surface-2); }
+.tool[open] > summary { border-bottom: 1px solid var(--line); }
+
+.tool__title { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; }
+.tool__desc { font-size: var(--fs-sm); color: var(--text-muted); }
+.tool__body { padding: var(--sp-5); }
+.tool__body > form { margin-bottom: var(--sp-5); }
+
 /* ------------------------------- Print ---------------------------------- *
  * The printable client summary. Force light colours, open every <details> so
  * the explanations appear (the whole point — a coach hands over the reasoning,
