@@ -60,6 +60,21 @@ const API = {
   prepPlan: (payload) => API.call('/api/prep-plan', { method: 'POST', body: payload }),
   strength: (payload) => API.call('/api/strength',  { method: 'POST', body: payload }),
 
+  // Coach auth
+  session:  ()   => API.call('/api/session'),
+  login:    (pw) => API.call('/api/login',  { method: 'POST', body: { password: pw } }),
+  logout:   ()   => API.call('/api/logout', { method: 'POST' }),
+
+  // Onboarding links & submitted questionnaires
+  invites:       ()      => API.call('/api/invites'),
+  createInvite:  (p)     => API.call('/api/invites', { method: 'POST', body: p }),
+  revokeInvite:  (id)    => API.call(`/api/invites/${id}/revoke`, { method: 'POST' }),
+  deleteInvite:  (id)    => API.call(`/api/invites/${id}`, { method: 'DELETE' }),
+  intakes:       ()      => API.call('/api/intakes'),
+  intake:        (id)    => API.call(`/api/intakes/${id}`),
+  convertIntake: (id)    => API.call(`/api/intakes/${id}/convert`, { method: 'POST' }),
+  deleteIntake:  (id)    => API.call(`/api/intakes/${id}`, { method: 'DELETE' }),
+
   clients:       ()            => API.call('/api/clients'),
   createClient:  (p)           => API.call('/api/clients', { method: 'POST', body: p }),
   client:        (id)          => API.call(`/api/clients/${id}`),

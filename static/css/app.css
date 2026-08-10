@@ -1125,6 +1125,214 @@ canvas { display: block; width: 100%; height: auto; }
 .tool__body { padding: var(--sp-5); }
 .tool__body > form { margin-bottom: var(--sp-5); }
 
+/* =============================================================================
+ *  CLIENT ONBOARDING (/start/<token>)
+ * =============================================================================
+ *  This page is a sales asset, so it gets the calmest treatment in the app: one
+ *  section per screen, a visible progress bar, and every question carrying its
+ *  own "why I'm asking". A client should finish it feeling taken seriously.
+ * ========================================================================== */
+
+.wrap--narrow { max-width: 720px; }
+
+.onboarding .card { padding: var(--sp-6); }
+@media (max-width: 560px) { .onboarding .card { padding: var(--sp-4); } }
+
+/* ---- Coach credibility strip ------------------------------------------- */
+.credentials__row {
+  display: flex; flex-wrap: wrap; gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+
+/* ---- Progress ----------------------------------------------------------- */
+.progress { margin-bottom: var(--sp-5); }
+.progress__bar {
+  height: 5px;
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.progress__fill {
+  height: 100%;
+  background: var(--gradient);
+  border-radius: var(--radius-pill);
+  transition: width var(--dur) var(--ease);
+}
+.progress__label {
+  margin-top: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+/* ---- One question ------------------------------------------------------- */
+.qfield {
+  padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--line);
+}
+.qfield:last-child { border-bottom: none; padding-bottom: 0; }
+
+.qfield__label {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1rem; font-weight: 600;
+  margin-bottom: var(--sp-2);
+}
+.qfield__label em {
+  font-style: normal; font-weight: 400;
+  color: var(--text-faint); font-size: var(--fs-sm);
+}
+.req { color: var(--caution); margin-left: 3px; }
+
+/* The trust mechanism. Muted enough not to compete with the question, present
+   enough that it never has to be hunted for. */
+.askwhy {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-3);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.askwhy__mark {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+/* An unanswered required question, highlighted on a failed Next. */
+.qfield--missing {
+  background: var(--danger-bg);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-4);
+  margin: var(--sp-2) 0;
+  border-bottom-color: transparent;
+}
+.qfield--missing .qfield__label { color: var(--danger); }
+
+/* ---- Step navigation ---------------------------------------------------- */
+.stepnav {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+}
+.stepnav .btn { min-width: 120px; }
+@media (max-width: 460px) {
+  .stepnav .btn { min-width: 0; flex: 1; }
+}
+
+/* ---- Tick list ---------------------------------------------------------- */
+.ticklist { list-style: none; padding: 0; margin: 0 0 var(--sp-4); }
+.ticklist li {
+  position: relative;
+  padding-left: var(--sp-5);
+  margin-bottom: var(--sp-3);
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.ticklist li::before {
+  content: "✓";
+  position: absolute; left: 0; top: 0;
+  color: var(--accent); font-weight: 700;
+}
+
+/* =============================================================================
+ *  COACH LOGIN
+ * ========================================================================== */
+
+.login {
+  max-width: 420px;
+  margin: var(--sp-7) auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-6);
+  box-shadow: var(--shadow);
+}
+.login h2 { font-size: var(--fs-h3); margin-bottom: var(--sp-3); }
+.login__why {
+  font-size: var(--fs-sm); color: var(--text-muted);
+  margin-bottom: var(--sp-5); line-height: 1.65;
+}
+.login input[type="password"] {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  margin-bottom: var(--sp-4);
+}
+.login input[type="password"]:focus { outline: none; border-color: var(--accent); }
+
+.setup-note {
+  background: var(--caution-bg);
+  border: 1px solid color-mix(in srgb, var(--caution) 40%, transparent);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+.setup-note pre {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text);
+  margin: var(--sp-3) 0 0;
+}
+
+/* =============================================================================
+ *  INVITE LINKS & SUBMITTED INTAKES (coach side)
+ * ========================================================================== */
+
+.invite {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--sp-3);
+}
+.invite__main { flex: 1; min-width: 200px; }
+.invite__label { font-weight: 600; font-size: 0.95rem; }
+.invite__url {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  word-break: break-all;
+  margin-top: 2px;
+}
+.invite--used { opacity: 0.62; }
+
+.answer-grid { display: grid; gap: var(--sp-3); }
+.answer-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 34%) 1fr;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.92rem;
+}
+.answer-row:last-child { border-bottom: none; }
+.answer-row dt { color: var(--text-muted); }
+.answer-row dd { margin: 0; white-space: pre-wrap; }
+.answer-row dd:empty::after { content: "—"; color: var(--text-faint); }
+@media (max-width: 560px) {
+  .answer-row { grid-template-columns: 1fr; gap: 2px; }
+}
+
 /* ------------------------------- Print ---------------------------------- *
  * The printable client summary. Force light colours, open every <details> so
  * the explanations appear (the whole point — a coach hands over the reasoning,

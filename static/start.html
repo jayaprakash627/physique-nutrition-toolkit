@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your coaching questionnaire</title>
+  <meta name="description" content="A few questions so your coach can build a plan around your actual life." />
+
+  <!-- Private page. Keep it out of search results and out of referrers. -->
+  <meta name="robots" content="noindex, nofollow, noarchive" />
+  <meta name="referrer" content="same-origin" />
+
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/static/css/theme.css?v=2.0.0" />
+  <link rel="stylesheet" href="/static/css/app.css?v=2.0.0" />
+</head>
+<body class="onboarding">
+
+<nav class="nav">
+  <div class="nav__brand">
+    <span class="nav__mark" aria-hidden="true">JM</span>
+    <span class="nav__brand-text">
+      Jayaprakash M
+      <span class="nav__brand-sub">Strength &amp; physique coaching</span>
+    </span>
+  </div>
+  <span class="nav__spacer"></span>
+  <button class="icon-btn" id="themeToggle" title="Switch light / dark theme" aria-label="Switch theme">
+    <span id="themeIcon" aria-hidden="true">☀</span>
+  </button>
+</nav>
+
+<main class="wrap wrap--narrow">
+
+  <!-- Loading -->
+  <div id="loading" class="center" style="padding:var(--sp-9) 0">
+    <div class="spinner" style="margin:0 auto"></div>
+  </div>
+
+  <!-- Dead / used / expired link -->
+  <div id="deadLink" hidden>
+    <div class="card center" style="padding:var(--sp-8) var(--sp-5)">
+      <div class="empty__icon" aria-hidden="true">🔒</div>
+      <h1 style="font-size:var(--fs-h3);margin-bottom:var(--sp-4)">This link can't be used</h1>
+      <p class="muted" id="deadLinkMessage"></p>
+    </div>
+  </div>
+
+  <!-- Intro -->
+  <div id="intro" hidden>
+    <div class="hero">
+      <h1 id="introHeading">Let's build your plan properly</h1>
+      <p class="hero__sub" id="introBody"></p>
+    </div>
+
+    <div class="card">
+      <div class="credentials">
+        <div class="credentials__row">
+          <span class="chip chip--good">State Gold · Powerlifting</span>
+          <span class="chip chip--good">Inter-College Overall Gold</span>
+          <span class="chip chip--good">TABBA State Gold · Junior</span>
+          <span class="chip chip--good">District Silver · Bodybuilding</span>
+        </div>
+        <p class="small muted mb-0">
+          I've competed in powerlifting and bodybuilding, and I've done the
+          dieting myself. That's why these questions go where they do — I know
+          which details actually decide whether a plan survives contact with real
+          life.
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><h2>Before you start</h2></div>
+      <p class="small" id="privacySummary"></p>
+      <ul class="ticklist" id="introPoints">
+        <li>About 8 minutes. You can't lose your answers by scrolling — nothing sends until the end.</li>
+        <li>Every question explains why I'm asking.</li>
+        <li>"I don't know" is a perfectly good answer to most of it.</li>
+      </ul>
+      <button class="btn btn--primary btn--hero" id="beginBtn">Start →</button>
+    </div>
+  </div>
+
+  <!-- The questionnaire -->
+  <form id="intakeForm" hidden>
+    <div class="progress" id="progress">
+      <div class="progress__bar"><div class="progress__fill" id="progressFill"></div></div>
+      <div class="progress__label" id="progressLabel"></div>
+    </div>
+
+    <div id="sectionHost"></div>
+
+    <div class="stepnav">
+      <button type="button" class="btn btn--ghost" id="backBtn">← Back</button>
+      <button type="button" class="btn btn--primary" id="nextBtn">Next →</button>
+    </div>
+    <p class="q__hint center" id="stepError" hidden></p>
+  </form>
+
+  <!-- Consent + submit -->
+  <div id="consentStep" hidden>
+    <div class="progress">
+      <div class="progress__bar"><div class="progress__fill" style="width:100%"></div></div>
+      <div class="progress__label">Last step</div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><h2 id="consentTitle"></h2></div>
+      <ul class="ticklist" id="consentPoints"></ul>
+
+      <label class="checkbox" style="margin-top:var(--sp-5)">
+        <input type="checkbox" id="consentBox" />
+        <span id="consentLabel"></span>
+      </label>
+
+      <div class="stepnav" style="margin-top:var(--sp-4)">
+        <button type="button" class="btn btn--ghost" id="consentBack">← Back</button>
+        <button type="button" class="btn btn--primary" id="submitBtn" disabled>
+          Send to my coach
+        </button>
+      </div>
+      <p class="q__hint center" id="submitError" hidden></p>
+    </div>
+  </div>
+
+  <!-- Thank you + the personalised read -->
+  <div id="doneStep" hidden>
+    <div class="answer" style="text-align:left">
+      <h1 id="doneHeading" style="font-size:var(--fs-h2);margin-bottom:var(--sp-4)"></h1>
+      <div id="doneBody" class="answer__expect" style="margin-left:0;max-width:64ch"></div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><h2>What stood out to me straight away</h2></div>
+      <div class="steps" id="prioritiesHost"></div>
+      <div class="note" id="prioritiesNote">
+        These are first impressions from your answers — not your plan. Your actual
+        numbers and programme are what we'll go through together.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><h2>What happens next</h2></div>
+      <div class="steps" id="nextStepsHost"></div>
+    </div>
+  </div>
+
+</main>
+
+<footer class="wrap wrap--narrow no-print" style="padding-top:0">
+  <p class="xs muted center">
+    Coaching guidance is general nutrition and training support — not medical
+    advice, diagnosis or treatment.
+  </p>
+</footer>
+
+<script src="/static/js/api.js?v=2.0.0"></script>
+<script src="/static/js/start.js?v=2.0.0"></script>
+</body>
+</html>

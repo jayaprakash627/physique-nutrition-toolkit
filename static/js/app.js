@@ -79,7 +79,9 @@ function initTabs() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
       if (tab.dataset.tab === 'learn') loadLearn();
-      if (tab.dataset.tab === 'coach') loadClients();
+      // Re-check auth every time rather than caching it, so an expired session
+      // shows the login form instead of a workspace of failing requests.
+      if (tab.dataset.tab === 'coach') refreshCoachState();
 
       // A chart inside a hidden panel measures its container as 0 wide, so
       // anything drawn while hidden needs a repaint once it's visible.
@@ -385,6 +387,144 @@ async function loadLearn() {
  *  Coach mode: clients & tracking
  * ========================================================================== */
 
+/**
+ * Decide which of the three coach states to show: locked (no password set),
+ * login, or the workspace.
+ *
+ * Called whenever the tab opens, so an expired session shows the login form
+ * rather than a workspace full of failing requests.
+ */
+async function refreshCoachState() {
+  const locked = document.getElementById('coachLocked');
+  const login = document.getElementById('coachLogin');
+  const work = document.getElementById('coachWorkspace');
+  [locked, login, work].forEach(el => { el.hidden = true; });
+
+  let s;
+  try {
+    s = await API.session();
+  } catch (e) {
+    login.hidden = false;
+    showLoginError(e.message);
+    return;
+  }
+
+  if (!s.configured) {
+    locked.hidden = false;
+    // The hint is a multi-line shell snippet, so the command gets a <pre>.
+    const [intro, ...rest] = s.setup_hint.split('\n\n');
+    document.getElementById('setupNote').innerHTML =
+      `${esc(intro)}<pre>${esc(rest.join('\n\n').trim())}</pre>`;
+    return;
+  }
+
+  if (!s.logged_in) {
+    login.hidden = false;
+    return;
+  }
+
+  work.hidden = false;
+  await Promise.all([loadClients(), loadInvites(), loadIntakes()]);
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.hidden = false;
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('loginBtn');
+  const input = document.getElementById('coachPassword');
+  document.getElementById('loginError').hidden = true;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Checking…';
+
+  try {
+    await API.login(input.value);
+    input.value = '';
+    await refreshCoachState();
+  } catch (err) {
+    showLoginError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Log in';
+  }
+}
+
+async function doLogout() {
+  try { await API.logout(); } catch { /* logging out locally regardless */ }
+  State.activeClientId = null;
+  document.getElementById('clientDetail').innerHTML =
+    '<div class="empty"><p>Logged out.</p></div>';
+  await refreshCoachState();
+}
+
+/* ---------------------------------------------------------------------------
+ *  Onboarding links
+ * ------------------------------------------------------------------------ */
+
+async function loadInvites() {
+  try {
+    const { invites } = await API.invites();
+    document.getElementById('inviteList').innerHTML = Render.inviteList(invites);
+  } catch (e) {
+    document.getElementById('inviteList').innerHTML =
+      `<p class="muted small">${esc(e.message)}</p>`;
+  }
+}
+
+async function createInvite(e) {
+  e.preventDefault();
+  try {
+    const inv = await API.createInvite({
+      label: document.getElementById('inviteLabel').value.trim() || null,
+      ttl_days: numVal('inviteTtl') ?? 14,
+    });
+    document.getElementById('inviteLabel').value = '';
+    await loadInvites();
+
+    // Put it straight on the clipboard — the next thing you do is paste it into
+    // WhatsApp, so saving that step is the whole point.
+    try {
+      await navigator.clipboard.writeText(inv.url);
+      toast('Link created and copied — paste it to your client');
+    } catch {
+      toast('Link created — use "Copy link" to grab it');
+    }
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ *  Submitted questionnaires
+ * ------------------------------------------------------------------------ */
+
+async function loadIntakes() {
+  try {
+    const { intakes } = await API.intakes();
+    document.getElementById('intakeList').innerHTML = Render.intakeList(intakes);
+    // Surface the section when something is waiting to be read.
+    if (intakes.length) document.getElementById('intakesTool').open = true;
+  } catch (e) {
+    document.getElementById('intakeList').innerHTML =
+      `<p class="muted small">${esc(e.message)}</p>`;
+  }
+}
+
+async function openIntake(id) {
+  const host = document.getElementById('intakeDetail');
+  host.innerHTML = '<div class="center"><div class="spinner" style="margin:0 auto"></div></div>';
+  try {
+    host.innerHTML = Render.intakeDetail(await API.intake(id));
+    host.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    host.innerHTML = `<p class="muted small">${esc(e.message)}</p>`;
+  }
+}
+
 async function loadClients() {
   try {
     const { clients } = await API.clients();
@@ -546,6 +686,84 @@ function initClientEvents() {
   panel.addEventListener('submit', e => {
     if (e.target.id === 'measForm') addMeasurement(e);
   });
+
+  // ---- Onboarding: links and submissions -------------------------------
+  panel.addEventListener('click', async e => {
+    const copy = e.target.closest('[data-copy]');
+    if (copy) {
+      try {
+        await navigator.clipboard.writeText(copy.dataset.copy);
+        toast('Link copied');
+      } catch {
+        // Clipboard needs a secure context, so it fails on plain-HTTP LAN
+        // access. Select the text instead of leaving them stuck.
+        const url = copy.closest('.invite')?.querySelector('.invite__url');
+        if (url) {
+          const range = document.createRange();
+          range.selectNodeContents(url);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        toast('Copy blocked by the browser — the link is selected, press Ctrl/Cmd+C', true);
+      }
+      return;
+    }
+
+    const revoke = e.target.closest('[data-revoke]');
+    if (revoke) {
+      if (!confirm('Cancel this link? Anyone holding it will no longer be able to use it.')) return;
+      try {
+        await API.revokeInvite(Number(revoke.dataset.revoke));
+        toast('Link cancelled');
+        await loadInvites();
+      } catch (err) { toast(err.message, true); }
+      return;
+    }
+
+    const delInvite = e.target.closest('[data-del-invite]');
+    if (delInvite) {
+      try {
+        await API.deleteInvite(Number(delInvite.dataset.delInvite));
+        await loadInvites();
+      } catch (err) { toast(err.message, true); }
+      return;
+    }
+
+    const openBtn = e.target.closest('[data-open-intake]');
+    if (openBtn) { openIntake(Number(openBtn.dataset.openIntake)); return; }
+
+    if (e.target.closest('#closeIntake')) {
+      document.getElementById('intakeDetail').innerHTML = '';
+      return;
+    }
+
+    const convert = e.target.closest('[data-convert]');
+    if (convert) {
+      try {
+        const res = await API.convertIntake(Number(convert.dataset.convert));
+        toast(`${res.client.name} added, with their starting weight logged`);
+        await Promise.all([loadIntakes(), loadClients()]);
+        await openClient(res.client.id);
+        document.getElementById('intakeDetail').innerHTML = '';
+      } catch (err) { toast(err.message, true); }
+      return;
+    }
+
+    const delIntake = e.target.closest('[data-del-intake]');
+    if (delIntake) {
+      if (!confirm(
+        'Permanently delete this questionnaire? This is what you use when a '
+        + 'client asks you to erase their data — it cannot be undone.'
+      )) return;
+      try {
+        await API.deleteIntake(Number(delIntake.dataset.delIntake));
+        document.getElementById('intakeDetail').innerHTML = '';
+        toast('Submission deleted');
+        await loadIntakes();
+      } catch (err) { toast(err.message, true); }
+    }
+  });
 }
 
 /* =============================================================================
@@ -568,6 +786,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('prepForm').addEventListener('submit', runPrep);
   document.getElementById('strForm').addEventListener('submit', runStrength);
   document.getElementById('clientForm').addEventListener('submit', createClient);
+  document.getElementById('loginForm').addEventListener('submit', doLogin);
+  document.getElementById('logoutBtn').addEventListener('click', doLogout);
+  document.getElementById('inviteForm').addEventListener('submit', createInvite);
   initClientEvents();
 
   // Buttons that live inside re-rendered markup, handled by delegation.

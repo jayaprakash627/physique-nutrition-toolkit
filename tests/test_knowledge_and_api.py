@@ -18,10 +18,13 @@ import tempfile
 
 import pytest
 
-# The app opens its SQLite file at import time, so the env var has to be set
-# before `app.main` is imported — hence this sitting above the app imports.
+# The app opens its SQLite file and reads the coach password at import time, so
+# both env vars have to be set before `app.main` is imported — hence this sitting
+# above the app imports.
 _tmp_db = os.path.join(tempfile.mkdtemp(), "test_toolkit.db")
 os.environ["TOOLKIT_DB"] = _tmp_db
+TEST_PASSWORD = "test-coach-password"
+os.environ["COACH_PASSWORD"] = TEST_PASSWORD
 
 from fastapi.testclient import TestClient          # noqa: E402
 
@@ -29,7 +32,14 @@ from app import engine                              # noqa: E402
 from app.knowledge import explanations, foods, micronutrients, sources  # noqa: E402
 from app.main import app                            # noqa: E402
 
+# Two clients on purpose, so a test can't accidentally prove that a protected
+# endpoint works while actually being logged in:
+#   `public`  — never authenticates. Used for the calculator and to assert that
+#               client-data endpoints reject anonymous callers.
+#   `client`  — logged in as the coach. Used for everything behind the gate.
+public = TestClient(app)
 client = TestClient(app)
+assert client.post("/api/login", json={"password": TEST_PASSWORD}).status_code == 200
 
 
 # ===========================================================================

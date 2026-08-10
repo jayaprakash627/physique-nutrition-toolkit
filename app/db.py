@@ -11,10 +11,12 @@ than a pool. If it ever became multi-user I'd move to a connection pool and
 proper migrations — noting that here because it's the honest boundary of the
 design, not an oversight.
 
-Three tables:
+Five tables:
     clients       one row per person the coach tracks
     measurements  many rows per client, one per weigh-in — this is the time series
     reports       saved assessment snapshots, stored as JSON
+    invites       one-time onboarding links, each with an unguessable token
+    intakes       submitted onboarding questionnaires, stored as JSON
 
 `reports` stores the whole response as a JSON blob rather than normalising it
 into columns. That's deliberate: the report shape includes long-form explanation
@@ -28,9 +30,10 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 DB_PATH = os.environ.get(
     "TOOLKIT_DB",
@@ -77,13 +80,52 @@ CREATE TABLE IF NOT EXISTS reports (
   FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
 );
 
+-- One-time onboarding links. A client gets an unguessable token rather than a
+-- public form, so an intake URL can't be found by guessing and can't be reused
+-- or passed around after it's been filled in.
+CREATE TABLE IF NOT EXISTS invites (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  token        TEXT UNIQUE NOT NULL,
+  label        TEXT,
+  created_at   TEXT,
+  expires_at   TEXT,
+  submitted_at TEXT,
+  revoked_at   TEXT
+);
+
+-- Submitted questionnaires. `payload` holds the answers as JSON for the same
+-- reason `reports` does: it's a long questionnaire that will keep evolving, and
+-- a submission should stay exactly as the client wrote it even after the
+-- questions change. name and contact are lifted out as columns purely so the
+-- coach's list view doesn't have to parse every payload to render.
+CREATE TABLE IF NOT EXISTS intakes (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  invite_id       INTEGER,
+  client_id       INTEGER,
+  created_at      TEXT,
+  consent_version TEXT,
+  consent_at      TEXT,
+  full_name       TEXT,
+  contact         TEXT,
+  payload         TEXT,
+  FOREIGN KEY (invite_id) REFERENCES invites(id) ON DELETE SET NULL,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+);
+
 -- The measurements query is always "everything for one client, in date order",
 -- so index exactly that.
 CREATE INDEX IF NOT EXISTS idx_measurements_client
   ON measurements(client_id, taken_on);
 CREATE INDEX IF NOT EXISTS idx_reports_client
   ON reports(client_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
+CREATE INDEX IF NOT EXISTS idx_intakes_created ON intakes(created_at);
 """
+
+# Every table the app expects. _ensure_schema compares against this rather than
+# checking one table, so adding a table to SCHEMA above is enough to have it
+# created on databases that already exist.
+EXPECTED_TABLES = {"clients", "measurements", "reports", "invites", "intakes"}
 
 MEASUREMENT_COLS = [
     "taken_on", "weight_kg", "bodyfat_pct", "waist_cm", "neck_cm",
@@ -109,11 +151,19 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
     CREATE TABLE IF NOT EXISTS makes running the script idempotent, so recovery
     costs nothing and needs no restart.
+
+    It also doubles as the migration path. Checking one table wasn't enough: when
+    `invites` and `intakes` were added, an existing database already had `clients`,
+    so a single-table check would have passed and the new tables would never have
+    been created. Comparing the full expected set means adding a table to SCHEMA
+    is all that's needed.
     """
-    exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='clients'"
-    ).fetchone()
-    if not exists:
+    present = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if not EXPECTED_TABLES.issubset(present):
         conn.executescript(SCHEMA)
 
 
@@ -332,4 +382,159 @@ def get_report(report_id: int) -> dict | None:
 def delete_report(report_id: int) -> bool:
     with db() as c:
         cur = c.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+        return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+#  Onboarding invites
+# ---------------------------------------------------------------------------
+
+INVITE_TTL_DAYS = 14
+
+
+def create_invite(label: str | None, ttl_days: int = INVITE_TTL_DAYS) -> dict:
+    """
+    Mint a one-time onboarding link.
+
+    The token is 32 URL-safe bytes from `secrets`, so it can't be guessed or
+    enumerated — that's what makes a private form private without a login for the
+    client. It expires so an old link in someone's WhatsApp history stops working.
+    """
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=max(1, min(90, ttl_days)))
+
+    with db() as c:
+        cur = c.execute(
+            "INSERT INTO invites (token, label, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (token, label, now.isoformat(timespec="seconds"),
+             expires.isoformat(timespec="seconds")),
+        )
+        new_id = cur.lastrowid
+    return get_invite(new_id)
+
+
+def get_invite(invite_id: int) -> dict | None:
+    with db() as c:
+        row = c.execute("SELECT * FROM invites WHERE id = ?", (invite_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_invite_by_token(token: str) -> dict | None:
+    with db() as c:
+        row = c.execute("SELECT * FROM invites WHERE token = ?", (token,)).fetchone()
+        return dict(row) if row else None
+
+
+def invite_state(invite: dict | None) -> str:
+    """
+    Why a link can't be used — so the client sees a clear reason rather than a 404.
+
+    Returns: "ok" | "missing" | "revoked" | "used" | "expired"
+    """
+    if not invite:
+        return "missing"
+    if invite.get("revoked_at"):
+        return "revoked"
+    if invite.get("submitted_at"):
+        return "used"
+    try:
+        if datetime.fromisoformat(invite["expires_at"]) < datetime.now(timezone.utc):
+            return "expired"
+    except (TypeError, ValueError):
+        pass
+    return "ok"
+
+
+def list_invites() -> list[dict]:
+    """Newest first, with a usable/used state for each."""
+    with db() as c:
+        rows = c.execute("SELECT * FROM invites ORDER BY id DESC LIMIT 200").fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["state"] = invite_state(d)
+        out.append(d)
+    return out
+
+
+def revoke_invite(invite_id: int) -> bool:
+    with db() as c:
+        cur = c.execute(
+            "UPDATE invites SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+            (_now(), invite_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_invite(invite_id: int) -> bool:
+    with db() as c:
+        cur = c.execute("DELETE FROM invites WHERE id = ?", (invite_id,))
+        return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+#  Submitted intakes
+# ---------------------------------------------------------------------------
+
+def create_intake(*, invite_id: int, answers: dict, consent_version: str) -> dict:
+    """
+    Store a submission and burn the invite in the same transaction.
+
+    Both happen on one connection so a link can't be marked used while its
+    answers fail to save, or vice versa — the client would either lose their work
+    or be able to submit twice.
+    """
+    now = _now()
+    with db() as c:
+        cur = c.execute(
+            "INSERT INTO intakes (invite_id, created_at, consent_version, consent_at, "
+            "full_name, contact, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (invite_id, now, consent_version, now,
+             (answers.get("full_name") or "").strip() or None,
+             (answers.get("contact") or "").strip() or None,
+             json.dumps(answers)),
+        )
+        new_id = cur.lastrowid
+        c.execute("UPDATE invites SET submitted_at = ? WHERE id = ?", (now, invite_id))
+    return {"id": new_id, "created_at": now}
+
+
+def list_intakes() -> list[dict]:
+    """Index for the coach's list — no payload, so it stays light."""
+    with db() as c:
+        rows = c.execute(
+            "SELECT id, invite_id, client_id, created_at, full_name, contact "
+            "FROM intakes ORDER BY id DESC LIMIT 200"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_intake(intake_id: int) -> dict | None:
+    with db() as c:
+        row = c.execute("SELECT * FROM intakes WHERE id = ?", (intake_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["answers"] = json.loads(d.pop("payload") or "{}")
+        return d
+
+
+def delete_intake(intake_id: int) -> bool:
+    """
+    Hard delete, for a client exercising their right to have data removed.
+
+    A soft delete would leave their health answers sitting in the file, which
+    would make the promise on the consent screen untrue.
+    """
+    with db() as c:
+        cur = c.execute("DELETE FROM intakes WHERE id = ?", (intake_id,))
+        return cur.rowcount > 0
+
+
+def link_intake_to_client(intake_id: int, client_id: int) -> bool:
+    with db() as c:
+        cur = c.execute(
+            "UPDATE intakes SET client_id = ? WHERE id = ?", (client_id, intake_id)
+        )
         return cur.rowcount > 0

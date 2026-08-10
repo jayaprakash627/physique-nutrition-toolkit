@@ -1264,3 +1264,141 @@ const Render = {
       </div>`}`;
   },
 };
+
+/* =============================================================================
+ *  ONBOARDING (coach side) — appended to the Render object.
+ * =============================================================================
+ *  Kept separate from the object literal above only because it was added later;
+ *  same namespace, same conventions.
+ * ========================================================================== */
+
+Object.assign(Render, {
+
+  /** The list of onboarding links, newest first. */
+  inviteList(invites) {
+    if (!invites.length) {
+      return `<p class="muted small">
+        No links yet. Create one above and send it to your client — it's the whole
+        onboarding flow in a single URL.
+      </p>`;
+    }
+
+    const stateChip = {
+      ok: '<span class="chip chip--good">ready to send</span>',
+      used: '<span class="chip">filled in</span>',
+      expired: '<span class="chip chip--caution">expired</span>',
+      revoked: '<span class="chip chip--danger">cancelled</span>',
+      missing: '<span class="chip chip--danger">invalid</span>',
+    };
+
+    return invites.map(inv => `
+      <div class="invite ${inv.state === 'ok' ? '' : 'invite--used'}">
+        <div class="invite__main">
+          <span class="invite__label">${esc(inv.label || 'Unlabelled link')}</span>
+          ${inv.state === 'ok'
+            ? `<span class="invite__url">${esc(inv.url)}</span>`
+            : `<span class="invite__url">link hidden — ${esc(inv.state)}</span>`}
+        </div>
+        ${stateChip[inv.state] || ''}
+        ${inv.state === 'ok' ? `
+          <button class="btn btn--ghost btn--sm" data-copy="${esc(inv.url)}">Copy link</button>
+          <button class="btn btn--ghost btn--sm" data-revoke="${inv.id}"
+                  title="Stop this link working">Cancel</button>` : `
+          <button class="btn btn--ghost btn--sm" data-del-invite="${inv.id}">Remove</button>`}
+      </div>`).join('');
+  },
+
+  /** The list of submitted questionnaires. */
+  intakeList(intakes) {
+    if (!intakes.length) {
+      return `<p class="muted small">Nothing submitted yet.</p>`;
+    }
+    return intakes.map(i => `
+      <div class="invite">
+        <div class="invite__main">
+          <span class="invite__label">${esc(i.full_name || 'Unnamed')}</span>
+          <span class="invite__url">
+            ${esc((i.created_at || '').slice(0, 10))}
+            ${i.contact ? ' · ' + esc(i.contact) : ''}
+            ${i.client_id ? ' · already a client' : ''}
+          </span>
+        </div>
+        <button class="btn btn--ghost btn--sm" data-open-intake="${i.id}">Read it</button>
+      </div>`).join('');
+  },
+
+  /**
+   * One full submission.
+   *
+   * Answers are labelled using the same section schema the client filled in, so
+   * the coach reads questions rather than database keys — and any answer to a
+   * question that has since been reworded still displays under its original label.
+   */
+  intakeDetail(data) {
+    const answers = data.answers || {};
+
+    const labelFor = (section, field) => {
+      const raw = answers[field.key];
+      if (raw === undefined || raw === null || String(raw).trim() === '') return null;
+      // Map stored option values back to the label the client actually saw.
+      let shown = String(raw);
+      if (field.options) {
+        const hit = field.options.find(o => o.value === raw);
+        if (hit) shown = hit.label;
+      }
+      return `<div class="answer-row">
+        <dt>${esc(field.label)}</dt>
+        <dd>${esc(shown)}${field.unit ? ' ' + esc(field.unit) : ''}</dd>
+      </div>`;
+    };
+
+    const sections = (data.sections || []).map(section => {
+      const rows = section.fields.map(f => labelFor(section, f)).filter(Boolean).join('');
+      if (!rows) return '';
+      return `
+        <div class="card">
+          <div class="card__head"><h3>${esc(section.title)}</h3></div>
+          <dl class="answer-grid">${rows}</dl>
+        </div>`;
+    }).join('');
+
+    const priorities = (data.priorities || []).map((p, i) => `
+      <div class="step">
+        <span class="step__n">${i + 1}</span>
+        <div>
+          <div class="step__do">${esc(p.title)}</div>
+          <p class="step__how">${esc(p.because)}</p>
+        </div>
+      </div>`).join('');
+
+    return `
+      <div class="card" style="margin-top:var(--sp-5)">
+        <div class="card__head">
+          <h2>${esc(data.full_name || 'Submission')}</h2>
+          <div class="actions">
+            ${data.client_id
+              ? '<span class="chip chip--good">linked to a client</span>'
+              : `<button class="btn btn--primary btn--sm" data-convert="${data.id}">
+                   Add as a client
+                 </button>`}
+            <button class="btn btn--danger btn--sm" data-del-intake="${data.id}"
+                    title="Permanently delete this submission">Delete</button>
+            <button class="btn btn--ghost btn--sm" id="closeIntake">Close</button>
+          </div>
+        </div>
+        <p class="small muted">
+          Submitted ${esc((data.created_at || '').replace('T', ' ').slice(0, 16))}
+          · consent recorded (${esc(data.consent_version || '—')})
+          ${data.contact ? ' · ' + esc(data.contact) : ''}
+        </p>
+        ${priorities ? `
+          <div class="card__head" style="margin-top:var(--sp-5)"><h3>What stands out</h3></div>
+          <div class="steps">${priorities}</div>
+          <div class="note">
+            The client saw these too — it's what convinces them you read their
+            answers. Their numbers were deliberately not shown to them.
+          </div>` : ''}
+      </div>
+      ${sections}`;
+  },
+});

@@ -8,12 +8,16 @@
 
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
 
+  <!-- The ?v= on our own CSS and JS below is a cache buster. Without it, a
+       returning client keeps running the JavaScript their browser cached weeks
+       ago while the server serves new HTML — which breaks in confusing ways.
+       Bump the version whenever a file in static/css or static/js changes. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/static/css/theme.css" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/theme.css?v=2.0.0" />
+  <link rel="stylesheet" href="/static/css/app.css?v=2.0.0" />
 </head>
 <body>
 
@@ -437,13 +441,90 @@
     <div class="page-head">
       <h1>Coach mode</h1>
       <p>
-        For tracking other people. Save a client, log their measurements over
-        time, and watch the trend — one reading is noise, the line is the
+        For tracking other people. Send an onboarding link, read what comes back,
+        then log measurements over time — one reading is noise, the line is the
         information.
       </p>
     </div>
 
-    <div class="split">
+    <!-- No password configured: refuse rather than run unprotected. -->
+    <div id="coachLocked" hidden>
+      <div class="login">
+        <h2>Coach mode is locked</h2>
+        <p class="login__why">
+          This section holds other people's health data, so it won't run without a
+          password. That's deliberate — a missing setting should never mean an
+          unlocked door.
+        </p>
+        <div class="setup-note" id="setupNote"></div>
+      </div>
+    </div>
+
+    <!-- Login -->
+    <div id="coachLogin" hidden>
+      <form class="login" id="loginForm">
+        <h2>Coach login</h2>
+        <p class="login__why">
+          Your clients' measurements and onboarding answers are behind this. The
+          public calculator needs no login.
+        </p>
+        <label class="field-label" for="coachPassword">Password</label>
+        <input type="password" id="coachPassword" autocomplete="current-password"
+               placeholder="••••••••••••" required />
+        <button type="submit" class="btn btn--primary btn--full" id="loginBtn">Log in</button>
+        <p class="q__hint" id="loginError" hidden></p>
+      </form>
+    </div>
+
+    <!-- The workspace -->
+    <div id="coachWorkspace" hidden>
+      <div class="actions" style="justify-content:flex-end;margin-bottom:var(--sp-4)">
+        <button class="btn btn--ghost btn--sm" id="logoutBtn">Log out</button>
+      </div>
+
+      <!-- Onboarding links -->
+      <details class="tool" id="invitesTool" open>
+        <summary>
+          <span class="tool__title">Onboarding links</span>
+          <span class="tool__desc">
+            Send a new client a private questionnaire — one link, single use
+          </span>
+        </summary>
+        <div class="tool__body">
+          <form id="inviteForm">
+            <div class="row">
+              <label class="minifield">
+                <span>Who's it for? <em>a note to yourself</em></span>
+                <input type="text" id="inviteLabel" maxlength="80" placeholder="e.g. Arjun — gym referral" />
+              </label>
+              <label class="minifield">
+                <span>Expires after <em>days</em></span>
+                <input type="number" id="inviteTtl" value="14" min="1" max="90" />
+              </label>
+            </div>
+            <p class="q__hint">
+              The link contains a long random token, so it can't be guessed, and it
+              stops working once it's been filled in. The client never sees your note.
+            </p>
+            <button type="submit" class="btn btn--primary">Create a link</button>
+          </form>
+          <div id="inviteList" style="margin-top:var(--sp-5)"></div>
+        </div>
+      </details>
+
+      <!-- Submitted questionnaires -->
+      <details class="tool" id="intakesTool">
+        <summary>
+          <span class="tool__title">Completed questionnaires</span>
+          <span class="tool__desc">What your clients sent back, and what stands out</span>
+        </summary>
+        <div class="tool__body">
+          <div id="intakeList"><p class="muted small">Nothing submitted yet.</p></div>
+          <div id="intakeDetail"></div>
+        </div>
+      </details>
+
+      <div class="split">
       <div class="rail">
         <div class="card">
           <div class="card__head"><h2>New client</h2></div>
@@ -491,7 +572,8 @@
           <p>Add a client, or pick one from the list.</p>
         </div>
       </div>
-    </div>
+      </div><!-- /.split -->
+    </div><!-- /#coachWorkspace -->
   </section>
 
 </main>
@@ -505,9 +587,9 @@
   </p>
 </footer>
 
-<script src="/static/js/api.js"></script>
-<script src="/static/js/charts.js"></script>
-<script src="/static/js/render.js"></script>
-<script src="/static/js/app.js"></script>
+<script src="/static/js/api.js?v=2.0.0"></script>
+<script src="/static/js/charts.js?v=2.0.0"></script>
+<script src="/static/js/render.js?v=2.0.0"></script>
+<script src="/static/js/app.js?v=2.0.0"></script>
 </body>
 </html>

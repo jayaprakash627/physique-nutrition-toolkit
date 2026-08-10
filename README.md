@@ -111,6 +111,50 @@ if a cut is working), and a printable summary that includes the explanations.
 
 ---
 
+## 🧑‍🤝‍🧑 Three surfaces, three levels of access
+
+This is one app with three front doors, deliberately:
+
+| Surface | Who | Access |
+|---|---|---|
+| `/` — the calculator | Anyone | **Open.** Stores nothing. It's the lead magnet. |
+| `/start/<token>` — client onboarding | One client, one link | **Token-gated.** No signup for the client; privacy comes from an unguessable, single-use, expiring token. |
+| Coach mode | Just you | **Password + session.** Everything that touches saved client data. |
+
+**Why give the calculator away?** Because free macro calculators are everywhere —
+the tool leaks nothing that wasn't already free. What it does is make you the
+person who *explained* it. And every disclaimer it carries ("adjust off your own
+results", "this can't see your bloodwork or training context") is a job
+description for a coach. The tool argues for hiring you more credibly than a
+sales page could, because it isn't selling.
+
+What's actually worth charging for isn't information — it's **continuity and
+iteration**: saved history, adjustment when progress stalls, the
+intake → plan → review loop, and programming. Those live behind the login.
+
+### The onboarding questionnaire
+
+40 questions across 6 short screens, one screen at a time with a progress bar.
+It asks the things nobody else asks — sleep and shift work, who cooks at home,
+which foods you genuinely hate, chai timing (tannins block iron), fasting and
+festival patterns, and *what broke your last diet attempt*.
+
+Two design decisions carry the whole thing:
+
+- **Every question explains why it's being asked.** Same instinct as the
+  calculator's "Why this number?" panels. Being asked good questions, with
+  reasons, is what makes a client feel taken seriously — and that feeling closes
+  the sale before any coaching happens.
+- **It ends with a personalised observation, not a plan.** `derive_priorities()`
+  reflects their answers back — *"you told me evening hunger broke your last
+  attempt, that's the first thing I'll design around"* — and deliberately
+  withholds the calorie and macro numbers. There's a test asserting no numeric
+  target ever reaches that screen. The insight earns the call; the numbers are
+  what you're paid for.
+
+Submissions convert to a tracked client in one click, with their starting weight
+already logged.
+
 ## ▶️ Run it
 
 Needs **Python 3.10+**. No build step, no Node, no database server.
@@ -129,10 +173,97 @@ pip install -r requirements.txt
 ```
 
 ```bash
-uvicorn app.main:app --reload
+COACH_PASSWORD="pick-something-long" uvicorn app.main:app --reload
 ```
 
 Then open **http://127.0.0.1:8000**. Interactive API docs at `/docs`.
+
+The calculator works without `COACH_PASSWORD`. Coach mode **refuses to run**
+without it and tells you so — a missing setting must never mean an unlocked door
+over someone's health data.
+
+## 🚀 Deploying it (read this before you do)
+
+This app holds other people's health information. That changes the checklist.
+
+### 1. Set a real password
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+Put it in your host's environment variables as `COACH_PASSWORD`. Never commit it,
+never put it in the repo, never paste it into a chat. Rotating it is an env change
+plus a restart — all existing sessions die immediately, which is also how you'd
+respond to a suspected leak.
+
+### 2. Confirm the lock is actually on
+
+```bash
+curl -s https://your-domain/api/health | grep coach_mode_configured
+```
+
+`false` means **you have published client health data with no password on it.**
+Fix it before sending anyone a link. Also confirm:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://your-domain/api/clients
+```
+
+That must be `401` (or `503`), never `200`.
+
+### 3. HTTPS, not optional
+
+The session cookie is marked `Secure` automatically when the request arrives over
+HTTPS (the app honours `X-Forwarded-Proto`, so it works behind Render, Railway,
+Fly and nginx). Over plain HTTP the cookie — and every client answer — travels in
+the clear. Most hosts give you TLS free; use it. If yours terminates TLS oddly,
+force the flag with `PNT_FORCE_SECURE_COOKIE=1`.
+
+### 4. Persist and back up the database
+
+The entire store is one `toolkit.db` file. On hosts with ephemeral disks
+(including Render's free tier) **that file is deleted on every redeploy** — you'd
+lose every client. Mount a persistent volume and point `TOOLKIT_DB` at it:
+
+```bash
+TOOLKIT_DB=/var/data/toolkit.db
+```
+
+Then back it up. It's a single file, so a scheduled copy is enough — and it's
+plaintext, so treat the backup as confidential too. Whoever holds that file holds
+your clients' health data.
+
+### 5. Know your obligations
+
+Collecting health data about identifiable people in India makes you a **data
+fiduciary** under the **Digital Personal Data Protection Act, 2023**, and health
+data is sensitive. The app gives you the mechanics — explicit consent with a
+recorded version and timestamp, a stated purpose, and a hard delete that really
+removes the row — but mechanics aren't compliance. **Check the current status of
+the notified rules yourself**, and if you're charging money for this, it's worth
+a short conversation with someone who knows the area. I'm an engineer, not your
+lawyer.
+
+Practical hygiene that costs nothing:
+- Don't email or WhatsApp plans containing someone's health details unnecessarily.
+- Don't screenshot Coach mode with a client list visible.
+- Delete a submission when a client asks — the button does a real delete.
+- Cancel an onboarding link once it's been used or if you sent it to the wrong person.
+
+### What's deliberately NOT built
+
+Honest boundaries, so you know what you're deploying:
+
+- **One coach, one password.** No user accounts, no roles, no multi-tenancy. Fine
+  for you; not a platform for other trainers.
+- **Sessions are in memory.** A restart logs you out. That's a feature at this
+  scale (no long-lived credential lying around) but it doesn't survive multiple
+  server instances — don't scale beyond one worker without moving sessions out.
+- **No email.** You send the onboarding link yourself.
+- **The database is unencrypted at rest.** SQLite is a plain file. Disk encryption
+  on the host is the answer, not something the app can fix.
+- **No audit log.** You can't currently see who read what, when.
 
 ### Tests
 
@@ -140,11 +271,16 @@ Then open **http://127.0.0.1:8000**. Interactive API docs at `/docs`.
 pip install -r requirements-dev.txt && pytest -q
 ```
 
-162 tests covering every formula against its published value, the safety
+232 tests covering every formula against its published value, the safety
 guardrails, knowledge-base integrity (every citation resolves, every nutrient is
 complete), the plain-language summary for every goal — including a check that no
-internal enum like `aggressive_cut` ever leaks into text a person reads — and the
-API contract.
+internal enum like `aggressive_cut` reaches text a person reads — the API
+contract, and the security boundary.
+
+The security tests are written the way an attacker probes: every client-data
+endpoint is hit with no session, with a forged cookie, and after logout, and each
+must refuse. A suite that only tested the happy path would pass with the lock
+removed.
 
 ---
 
@@ -155,9 +291,10 @@ API contract.
 | Backend | Python · FastAPI | Type-validated request models, automatic OpenAPI docs |
 | Storage | SQLite | One file, zero setup — matches the scale of a single-coach tool |
 | Validation | Pydantic | Physiological bounds on every field; catches height-in-metres |
+| Auth | stdlib `secrets` | Server-side sessions, constant-time compare, rate-limited login — no dependency |
 | Frontend | Plain HTML/CSS/JS | No framework, no build step — clone and run |
 | Charts | Hand-rolled Canvas | ~250 lines, DPR-aware, theme-reactive; no chart library |
-| Tests | pytest | 150 tests, no network, no fixtures beyond a temp DB |
+| Tests | pytest | 232 tests, no network, no fixtures beyond a temp DB |
 
 ### Layout
 
@@ -169,7 +306,9 @@ app/
 ├── formulas.py     pure maths, one function per published equation
 ├── safety.py       the guardrails — flags, blocks, and why
 ├── models.py       Pydantic schemas with physiological bounds
-├── db.py           SQLite: clients, measurements, saved reports
+├── security.py     coach auth: sessions, rate limiting, hardening
+├── intake.py       the onboarding questionnaire + personalised priorities
+├── db.py           SQLite: clients, measurements, reports, invites, intakes
 └── knowledge/      ← the nutrition content, deliberately separated
     ├── sources.py         33 cited standards, one entry each
     ├── explanations.py    the "Why this number?" text per macro

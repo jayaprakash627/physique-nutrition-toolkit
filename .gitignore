@@ -21,3 +21,6 @@ env/
 
 # Local tooling
 .claude/
+
+# Secrets — never commit
+.env

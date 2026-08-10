@@ -182,3 +182,74 @@ class MeasurementIn(BaseModel):
         except ValueError:
             raise ValueError("taken_on must be an ISO date, e.g. 2026-08-10")
         return v
+
+
+# ---------------------------------------------------------------------------
+#  Coach authentication
+# ---------------------------------------------------------------------------
+
+class LoginIn(BaseModel):
+    """
+    Coach login.
+
+    No username: there's exactly one coach. Adding a username field would imply a
+    user table that doesn't exist and give an attacker a second thing to enumerate.
+    """
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+# ---------------------------------------------------------------------------
+#  Onboarding
+# ---------------------------------------------------------------------------
+
+class InviteIn(BaseModel):
+    """Create a one-time onboarding link."""
+    label: str | None = Field(
+        None, max_length=80,
+        description="A note to yourself about who this link is for — the client never sees it",
+    )
+    ttl_days: int = Field(14, ge=1, le=90, description="How long the link stays usable")
+
+
+class IntakeIn(BaseModel):
+    """
+    A submitted questionnaire.
+
+    `answers` is deliberately a free-form dict rather than 30 typed fields. The
+    questionnaire is defined in `app/intake.py` and will keep changing, so pinning
+    it into a Pydantic model here would mean editing two files for every question
+    and would reject older submissions. Required fields and value sanity are
+    checked against that schema at the route instead, which keeps one source of
+    truth.
+
+    The consent flag is typed, because that one is a promise rather than data.
+    """
+    answers: dict = Field(..., description="key → value, keyed by the intake field keys")
+    consent: bool = Field(..., description="Must be true — the client ticked the consent box")
+
+    @field_validator("answers")
+    @classmethod
+    def _reasonable_size(cls, v: dict) -> dict:
+        """
+        Bound the payload.
+
+        This endpoint is reachable by anyone holding a link, so it shouldn't accept
+        an arbitrarily large body. Generous enough for long free-text answers,
+        small enough that it can't be used to fill the disk.
+        """
+        if len(v) > 200:
+            raise ValueError("Too many fields in this submission.")
+        for key, value in v.items():
+            if isinstance(value, str) and len(value) > 5000:
+                raise ValueError(f"The answer for '{key}' is too long.")
+        return v
+
+    @field_validator("consent")
+    @classmethod
+    def _must_consent(cls, v: bool) -> bool:
+        if not v:
+            raise ValueError(
+                "We can't store your answers without your consent. "
+                "Please tick the consent box."
+            )
+        return v
