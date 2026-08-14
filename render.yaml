@@ -12,9 +12,10 @@
 # If you change a setting in the dashboard, change it here too, or this drifts
 # into a lie.
 #
-# Free plan means an ephemeral disk: toolkit.db is recreated empty on every
-# redeploy and every idle spin-down. Fine for a public demo, NOT fine for real
-# client data — see the disk block at the bottom.
+# This container's disk is still ephemeral — that never changes on the free plan.
+# It no longer matters, because client data lives in Neon rather than in a file
+# next to the app. What the free plan still costs you is a cold start: the
+# instance sleeps after ~15 minutes idle and the next request waits 50+ seconds.
 
 services:
   - type: web
@@ -41,24 +42,24 @@ services:
     healthCheckPath: /api/health
 
     envVars:
-      # Set by hand in the dashboard on the live service. Without it, client
-      # endpoints return 503 by design rather than running open.
+      # Both are set by hand in the dashboard and deliberately not stored here.
+      # sync: false means "this service has a value; don't expect it in the repo"
+      # — a database URL contains a password and a session password is a
+      # password, and neither belongs in version control.
+      #
+      # Without COACH_PASSWORD, client endpoints return 503 by design rather
+      # than running open.
       - key: COACH_PASSWORD
         sync: false
 
-    # ─────────────────────────────────────────────────────────────────────
-    #  Storing real client data? Do all three together:
-    #    1. Move off `plan: free` (free plans cannot mount disks)
-    #    2. Uncomment the disk block below
-    #    3. Uncomment TOOLKIT_DB above so the database lands on that disk
-    #  Then set up a backup. It's one file, so a scheduled copy is enough — and
-    #  it's plaintext, so treat the backup as confidential too.
-    # ─────────────────────────────────────────────────────────────────────
-    #
-    #   - key: TOOLKIT_DB
-    #     value: /var/data/toolkit.db
-    #
-    # disk:
-    #   name: toolkit-data
-    #   mountPath: /var/data
-    #   sizeGB: 1
+      # Without DATABASE_URL the app silently falls back to SQLite on this
+      # container's ephemeral disk, and every client is erased on the next
+      # redeploy. /api/health reports "db_durable": false when that has
+      # happened — check it after any deploy that touched configuration.
+      - key: DATABASE_URL
+        sync: false
+
+    # No disk block, and none is needed. Client data lives in Neon (managed
+    # Postgres, free tier), which is what makes the free plan safe to keep: a
+    # mounted disk would require a paid instance, and the ephemeral disk this
+    # container does have now holds nothing that matters.

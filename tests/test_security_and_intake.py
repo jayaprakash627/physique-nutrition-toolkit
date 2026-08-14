@@ -304,8 +304,8 @@ def test_an_expired_link_stops_working(anon, coach):
     invite = make_invite(coach)
     # Reach past the API to age it, rather than waiting two weeks.
     with db.db() as c:
-        c.execute("UPDATE invites SET expires_at = ? WHERE id = ?",
-                  ("2020-01-01T00:00:00+00:00", invite["id"]))
+        c.run("UPDATE invites SET expires_at = ? WHERE id = ?",
+              ("2020-01-01T00:00:00+00:00", invite["id"]))
     assert anon.get(f"/api/intake/{invite['token']}").json()["state"] == "expired"
 
 
@@ -448,10 +448,13 @@ def test_deleting_an_intake_actually_removes_it(coach, anon):
     assert coach.delete(f"/api/intakes/{intake_id}").status_code == 200
     assert coach.get(f"/api/intakes/{intake_id}").status_code == 404
 
+    # Aliased rather than bare COUNT(*), so this reads the same on SQLite and on
+    # Postgres — the point of the test is the row being gone, on whichever store
+    # is actually holding the client's answers.
     with db.db() as c:
-        row = c.execute("SELECT COUNT(*) FROM intakes WHERE id = ?",
-                        (intake_id,)).fetchone()
-    assert row[0] == 0, "the answers are still in the database file"
+        row = c.query_one("SELECT COUNT(*) AS n FROM intakes WHERE id = ?",
+                          (intake_id,))
+    assert row["n"] == 0, "the answers are still in the database"
 
 
 def test_the_questionnaire_itself_is_well_formed():

@@ -193,15 +193,24 @@ This app holds other people's health information. That changes the checklist.
 **https://physique-nutrition-toolkit.onrender.com** — Render, free plan,
 Singapore region, auto-deploying from `main`.
 
-Two properties of the free plan you need to know before you send anyone the link:
+Client data lives in **Neon** (managed Postgres, free tier), not on the
+container. That split is the whole design: Render's disk is ephemeral and is
+wiped on every redeploy, so anything that must outlive a deploy has to live
+somewhere else. Set `DATABASE_URL` and the app uses Postgres; leave it unset and
+it falls back to a local SQLite file, which is right for development and
+**wrong** for anything holding a real client.
 
-- **It sleeps.** After ~15 minutes idle the instance spins down, and the next
-  request waits **50+ seconds** for a cold start. Nothing is broken; it's the
-  free tier waking up.
-- **The disk is ephemeral.** `toolkit.db` is recreated empty on every redeploy
-  and every spin-down. That makes this a **public demo**, not a place to keep
-  clients. To hold real data, follow the commented block at the bottom of
-  `render.yaml`: leave the free plan, mount a disk, point `TOOLKIT_DB` at it.
+The check that catches that mistake:
+
+```bash
+curl -s https://your-domain/api/health | grep db_durable
+```
+
+`"db_durable": false` means the deploy is writing to a disk that will be erased.
+
+One property of the free plan remains, and you should know it before sending
+anyone a link: **it sleeps.** After ~15 minutes idle the instance spins down and
+the next request waits **50+ seconds**. Nothing is broken; it's waking up.
 
 `render.yaml` mirrors the live configuration and explains each setting. Render
 doesn't read it for this service (it was created by hand in the dashboard), so
@@ -243,19 +252,35 @@ Fly and nginx). Over plain HTTP the cookie — and every client answer — trave
 the clear. Most hosts give you TLS free; use it. If yours terminates TLS oddly,
 force the flag with `PNT_FORCE_SECURE_COOKIE=1`.
 
-### 4. Persist and back up the database
+### 4. Set up the database, and back it up yourself
 
-The entire store is one `toolkit.db` file. On hosts with ephemeral disks
-(including Render's free tier) **that file is deleted on every redeploy** — you'd
-lose every client. Mount a persistent volume and point `TOOLKIT_DB` at it:
+Create a project on [Neon](https://neon.tech) (free tier, no card), copy the
+**pooled** connection string — the host contains `-pooler` — and set it as
+`DATABASE_URL` in your host's environment. Keep `?sslmode=require` on the end.
+That's the whole setup; the app creates its own tables on first connection.
+
+Two free-tier limits worth knowing, because both fail in ways you'd notice late:
+
+- **0.5 GB storage.** Text and JSON for a coaching roster is megabytes, so this
+  is not a real constraint — but past the limit **writes fail**, they don't
+  silently truncate.
+- **100 compute-hours/month.** Neon suspends after 5 idle minutes and suspended
+  time is free. This is why `/api/health` does no database I/O and why the pool
+  in `app/db.py` runs `min_size=0`: a health check or a warm pool would hold the
+  database awake and spend the month's allowance in about four days.
+
+**Now the part that is genuinely on you: backups.** The free plan's
+point-in-time restore window is **6 hours**, plus one manual snapshot. That
+covers "I deleted the wrong row before lunch". It does not cover noticing on
+Thursday that something went wrong on Monday. Take your own dump on a schedule:
 
 ```bash
-TOOLKIT_DB=/var/data/toolkit.db
+pg_dump "$DATABASE_URL" --no-owner --format=custom --file="toolkit-$(date +%F).dump"
 ```
 
-Then back it up. It's a single file, so a scheduled copy is enough — and it's
-plaintext, so treat the backup as confidential too. Whoever holds that file holds
-your clients' health data.
+Store it somewhere private and treat it as confidential — it's plaintext health
+data about identifiable people, and whoever holds that file holds your clients'
+records. If you never run this, you have a database, not a backup.
 
 ### 5. Know your obligations
 
@@ -284,8 +309,10 @@ Honest boundaries, so you know what you're deploying:
   scale (no long-lived credential lying around) but it doesn't survive multiple
   server instances — don't scale beyond one worker without moving sessions out.
 - **No email.** You send the onboarding link yourself.
-- **The database is unencrypted at rest.** SQLite is a plain file. Disk encryption
-  on the host is the answer, not something the app can fix.
+- **The app does no encryption of its own.** In production Neon encrypts at rest
+  and TLS covers the wire, so this is handled by the platform rather than by the
+  app — but the app can't help you if you take a `pg_dump` and leave it in your
+  Downloads folder. That file is plaintext health data.
 - **No audit log.** You can't currently see who read what, when.
 
 ### Tests
@@ -315,7 +342,7 @@ removed.
 | Part | Choice | Why |
 |---|---|---|
 | Backend | Python · FastAPI | Type-validated request models, automatic OpenAPI docs |
-| Storage | SQLite | One file, zero setup — matches the scale of a single-coach tool |
+| Storage | Postgres (Neon) in production, SQLite locally | One dialect, one `_Conn` wrapper; the tests need no database installed |
 | Validation | Pydantic | Physiological bounds on every field; catches height-in-metres |
 | Auth | stdlib `secrets` | Server-side sessions, constant-time compare, rate-limited login — no dependency |
 | Frontend | Plain HTML/CSS/JS | No framework, no build step — clone and run |
@@ -334,7 +361,8 @@ app/
 ├── models.py       Pydantic schemas with physiological bounds
 ├── security.py     coach auth: sessions, rate limiting, hardening
 ├── intake.py       the onboarding questionnaire + personalised priorities
-├── db.py           SQLite: clients, measurements, reports, invites, intakes
+├── db.py           storage: clients, measurements, reports, invites, intakes
+│                   Postgres when DATABASE_URL is set, SQLite when it isn't
 └── knowledge/      ← the nutrition content, deliberately separated
     ├── sources.py         33 cited standards, one entry each
     ├── explanations.py    the "Why this number?" text per macro
@@ -654,9 +682,10 @@ point of the tool.
 - **Nutrient values are approximations.** Brands, cooking oil and portion size
   all move them. Numbers are deliberately rounded — false precision implies
   accuracy that food tables themselves don't have.
-- **Single-user by design.** No auth, no multi-tenancy. SQLite with short-lived
-  connections is right for one coach; a multi-user version would need a
-  connection pool and real migrations.
+- **Single-user by design.** One coach, one password, no roles, no multi-tenancy.
+  Short-lived connections and `CREATE TABLE IF NOT EXISTS` are right at this
+  scale; a multi-user version would need real migrations rather than a schema
+  that heals itself on connect.
 - **The activity multiplier is the weakest input** in the whole calculation, and
   almost always overestimated. The UI says to pick lower and let real scale data
   correct it.

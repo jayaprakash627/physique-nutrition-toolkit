@@ -681,6 +681,17 @@ def health():
 
     `coach_mode_locked` is the one to watch after deploying: if it's false you've
     published client health data with no password on it.
+
+    This endpoint deliberately performs **no database I/O**. The host polls it
+    continuously as a health check, and the production database (Neon) bills
+    compute for time it is awake and suspends itself after five idle minutes. A
+    health check that opened a connection would hold it awake around the clock
+    and spend a month's free compute allowance in about four days — the
+    monitoring would be the only thing using the database. `db_backend` is read
+    from configuration, not from the database, so it still catches the mistake
+    that actually matters: a deploy that quietly fell back to ephemeral SQLite.
+
+    For a real round trip, use /api/health/db below.
     """
     return {
         "status": "ok",
@@ -690,7 +701,22 @@ def health():
         "intake_questions": len(intake.flatten_fields()),
         "coach_mode_configured": security.is_configured(),
         "coach_mode_locked": security.is_configured(),
+        "db_backend": db.backend(),
+        "db_durable": db.backend() == "postgres",
     }
+
+
+@app.get("/api/health/db", dependencies=[Depends(security.require_coach)])
+def health_db():
+    """
+    Can the app actually reach the store right now?
+
+    Coach-only, for two reasons. It's the coach who needs the answer, and leaving
+    it open would hand anyone a way to force a connection on demand — which on a
+    database that bills for awake time is a cheap way to run up someone else's
+    bill until writes start failing.
+    """
+    return db.health()
 
 
 # Mounted last so it doesn't shadow the API routes above.

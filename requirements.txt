@@ -7,6 +7,17 @@
 fastapi~=0.141.1
 uvicorn[standard]~=0.52.1
 
+# PostgreSQL, for the deployed app only. The store has to outlive the container:
+# this host's disk is ephemeral, so a SQLite file is deleted on every redeploy,
+# and these are real people's health records.
+#
+# [binary] ships a prebuilt libpq so the host needs no system packages at build
+# time. [pool] is what keeps the free database free — see the min_size=0 comment
+# in app/db.py.
+#
+# Not needed to run the app locally or to run the tests: with DATABASE_URL unset,
+# app/db.py uses SQLite from the standard library and never imports these.
+psycopg[binary,pool]~=3.2
+
 # Pydantic comes in with FastAPI and does all the input validation.
-# No database driver: SQLite ships with Python.
 # No frontend dependencies: the UI is plain HTML/CSS/JS with no build step.
