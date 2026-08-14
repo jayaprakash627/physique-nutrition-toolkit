@@ -147,6 +147,21 @@ SCHEMA: tuple[str, ...] = (
       FOREIGN KEY (invite_id) REFERENCES invites(id) ON DELETE SET NULL,
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
     )""",
+    # Coach sessions. Stored because the host sleeps after ~15 idle minutes and
+    # in-memory sessions died with the process — meaning the coach was logged out
+    # almost every time they opened the app.
+    #
+    # The primary key is a SHA-256 of the token, never the token. A session
+    # cookie is a live credential: anyone reading this table from a backup or a
+    # console would otherwise be able to log in as the coach. Hashes can't be
+    # replayed, and the lookup works exactly the same because the app hashes the
+    # cookie it was given and looks for that.
+    """
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      created_at TEXT,
+      expires_at TEXT
+    )""",
     # The measurements query is always "everything for one client, in date order",
     # so index exactly that.
     "CREATE INDEX IF NOT EXISTS idx_measurements_client ON measurements(client_id, taken_on)",
@@ -158,7 +173,8 @@ SCHEMA: tuple[str, ...] = (
 # Every table the app expects. _ensure_schema compares against this rather than
 # checking one table, so adding a table to SCHEMA above is enough to have it
 # created on databases that already exist.
-EXPECTED_TABLES = {"clients", "measurements", "reports", "invites", "intakes"}
+EXPECTED_TABLES = {"clients", "measurements", "reports", "invites", "intakes",
+                   "sessions"}
 
 MEASUREMENT_COLS = [
     "taken_on", "weight_kg", "bodyfat_pct", "waist_cm", "neck_cm",
@@ -702,3 +718,44 @@ def link_intake_to_client(intake_id: int, client_id: int) -> bool:
         return c.run(
             "UPDATE intakes SET client_id = ? WHERE id = ?", (client_id, intake_id)
         ) > 0
+
+
+# ---------------------------------------------------------------------------
+#  Coach sessions
+# ---------------------------------------------------------------------------
+#
+# Only ever handed a hash — see the sessions table comment in SCHEMA. This layer
+# deliberately knows nothing about tokens, cookies or expiry policy; that stays
+# in security.py, which is where someone reviewing the auth boundary will look.
+#
+# Expiry is compared as text. Every timestamp this module writes is UTC
+# ISO-8601 from _now(), so the strings sort in the same order as the instants
+# they represent — the comparison is only sound because the format is uniform.
+
+def session_create(token_hash: str, expires_at: str) -> None:
+    with db() as c:
+        c.run(
+            "INSERT INTO sessions (token_hash, created_at, expires_at) VALUES (?, ?, ?)",
+            (token_hash, _now(), expires_at),
+        )
+
+
+def session_live(token_hash: str) -> bool:
+    """True only if this session exists and has not expired."""
+    with db() as c:
+        row = c.query_one(
+            "SELECT 1 AS ok FROM sessions WHERE token_hash = ? AND expires_at > ?",
+            (token_hash, _now()),
+        )
+    return row is not None
+
+
+def session_delete(token_hash: str) -> None:
+    with db() as c:
+        c.run("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+
+
+def session_prune() -> None:
+    """Drop expired rows. Called on login, not on every request — it's housekeeping."""
+    with db() as c:
+        c.run("DELETE FROM sessions WHERE expires_at <= ?", (_now(),))

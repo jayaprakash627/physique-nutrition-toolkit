@@ -12,9 +12,17 @@ Design decisions and why:
 setup instructions instead of being open. A missing config must never mean "no
 lock on the door" — that's how the original version would have leaked.
 
-**Server-side sessions, not signed cookies.** A dict of token → expiry. It means
-a restart logs you out, which is a feature: there's no long-lived credential
-floating around, and revoking everything is a restart. No JWT to get wrong.
+**Server-side sessions, not signed cookies.** Token → expiry, held in the
+database. No JWT to get wrong, and revoking every session is one DELETE.
+
+These used to live in a module-level dict, and the docstring here argued that
+losing them on restart was a feature: no long-lived credential floating around.
+That argument was made on a laptop. In production the host sleeps after ~15 idle
+minutes, so "logged out on restart" meant logged out almost every time the coach
+opened the app — and a security property that makes people dread logging in is
+one they will work around. What's stored is a **SHA-256 of the token**, never the
+token, so the table is useless to anyone who reads it: hashes can't be replayed
+as cookies. Revocation is still cheap and expiry is still enforced server-side.
 
 **Rate-limited login.** One password protecting all client data is a brute-force
 target the moment it's on the internet. Failed attempts per IP, with a lockout.
@@ -28,11 +36,15 @@ lead magnet. Only the routes that touch saved client data are gated.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 import time
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, Request, Response
+
+from . import db
 
 # ---------------------------------------------------------------------------
 #  Configuration
@@ -67,39 +79,62 @@ def is_configured() -> bool:
 #  Sessions
 # ---------------------------------------------------------------------------
 
-# token -> expiry timestamp. In-memory on purpose: see the module docstring.
-_sessions: dict[str, float] = {}
+def _fingerprint(token: str) -> str:
+    """
+    What gets stored instead of the token.
 
-
-def _prune_sessions() -> None:
-    now = time.time()
-    for token in [t for t, exp in _sessions.items() if exp <= now]:
-        _sessions.pop(token, None)
+    Plain SHA-256 with no salt or stretching, deliberately. Those defend against
+    guessing a low-entropy secret; this token is 32 bytes from `secrets`, so
+    there is nothing to guess and a slow hash would only add latency to every
+    authenticated request. The job here is narrow: make the stored row useless if
+    someone reads the table.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def create_session() -> tuple[str, int]:
     """Issue a session token. Returns (token, max_age_seconds)."""
-    _prune_sessions()
     token = secrets.token_urlsafe(32)
-    _sessions[token] = time.time() + SESSION_TTL_SECONDS
+    expires = datetime.now(timezone.utc) + timedelta(seconds=SESSION_TTL_SECONDS)
+    db.session_create(_fingerprint(token), expires.isoformat(timespec="seconds"))
+    # Housekeeping on the cold path. Logins are rare; validation happens on every
+    # request, and that is not the place to be deleting rows.
+    db.session_prune()
     return token, SESSION_TTL_SECONDS
 
 
 def destroy_session(token: str | None) -> None:
-    if token:
-        _sessions.pop(token, None)
+    """
+    Log out.
+
+    Failures are swallowed on purpose. The caller clears the cookie regardless,
+    so the session is unusable from the browser either way, and a logout button
+    that can return an error is a logout button people stop trusting. The row is
+    expiry-bounded and gets pruned on the next login.
+    """
+    if not token:
+        return
+    try:
+        db.session_delete(_fingerprint(token))
+    except Exception:                             # noqa: BLE001
+        pass
 
 
 def session_valid(token: str | None) -> bool:
+    """
+    Is this cookie a live session?
+
+    Fails closed. If the database can't be reached the answer is False, not an
+    exception — an unreachable store must read as "not authenticated" rather than
+    surfacing a 500 from inside the auth check, and a coach who can't reach the
+    database has nothing to read anyway.
+    """
     if not token:
         return False
-    expiry = _sessions.get(token)
-    if expiry is None:
+    try:
+        return db.session_live(_fingerprint(token))
+    except Exception:                             # noqa: BLE001
         return False
-    if expiry <= time.time():
-        _sessions.pop(token, None)
-        return False
-    return True
 
 
 

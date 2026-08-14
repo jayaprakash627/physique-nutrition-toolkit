@@ -11,6 +11,7 @@ assert each one refuses. A test that only checks the happy path would pass
 happily with the lock removed.
 """
 
+import importlib
 import os
 import tempfile
 
@@ -171,6 +172,45 @@ def test_session_cookie_is_httponly(anon):
     set_cookie = r.headers.get("set-cookie", "")
     assert "httponly" in set_cookie.lower()
     assert "samesite=lax" in set_cookie.lower()
+
+
+def test_the_session_token_is_never_stored_in_the_database(anon):
+    """
+    Sessions moved into the database so the coach stops being logged out every
+    time the host sleeps. That trade is only acceptable if the stored row can't
+    be replayed: a session cookie is a live credential, so anyone reading this
+    table — from a backup, a console, a pg_dump left in Downloads — must not come
+    away with something they can paste into a browser.
+    """
+    r = anon.post("/api/login", json={"password": PASSWORD})
+    token = r.cookies.get(security.COOKIE_NAME)
+    assert token
+
+    with db.db() as c:
+        rows = c.query("SELECT token_hash FROM sessions")
+    stored = {row["token_hash"] for row in rows}
+
+    assert token not in stored, "the raw session token is sitting in the database"
+    assert security._fingerprint(token) in stored, "the session wasn't persisted at all"
+
+
+def test_a_session_survives_the_process_losing_its_memory(anon):
+    """
+    The whole point of the change. The host spins down after ~15 idle minutes,
+    which used to wipe an in-memory dict and log the coach out almost every time
+    they opened the app. Nothing about validation may depend on state held in
+    this process.
+    """
+    r = anon.post("/api/login", json={"password": PASSWORD})
+    token = r.cookies.get(security.COOKIE_NAME)
+
+    # Everything a restart would destroy. If validation still works after this,
+    # it is reading the store and not a module-level cache.
+    security._attempts.clear()
+    importlib.reload(security)
+
+    assert security.session_valid(token) is True
+    assert security.session_valid("not-a-real-token") is False
 
 
 def test_password_comparison_is_constant_time():

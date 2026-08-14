@@ -18,9 +18,14 @@ import tempfile
 
 import pytest
 
-# The app opens its SQLite file and reads the coach password at import time, so
-# both env vars have to be set before `app.main` is imported — hence this sitting
-# above the app imports.
+# The app resolves its SQLite path at import time, so TOOLKIT_DB has to be set
+# before `app.main` is imported — hence this sitting above the app imports.
+#
+# COACH_PASSWORD is different: it's read from the environment on every check, and
+# every test module in this suite sets it during collection. The module collected
+# last therefore owns it by the time any test actually runs, which is why the
+# re-logins further down ask the app which password is currently in force rather
+# than assuming it's this file's.
 _tmp_db = os.path.join(tempfile.mkdtemp(), "test_toolkit.db")
 os.environ["TOOLKIT_DB"] = _tmp_db
 TEST_PASSWORD = "test-coach-password"
@@ -28,7 +33,7 @@ os.environ["COACH_PASSWORD"] = TEST_PASSWORD
 
 from fastapi.testclient import TestClient          # noqa: E402
 
-from app import engine                              # noqa: E402
+from app import engine, security                    # noqa: E402
 from app.knowledge import explanations, foods, micronutrients, sources  # noqa: E402
 from app.main import app                            # noqa: E402
 
@@ -533,6 +538,13 @@ def test_api_recovers_when_the_database_file_is_deleted():
     os.remove(_tmp_db)
     assert not os.path.exists(_tmp_db)
 
+    # Sessions live in the database now, so deleting it logs the coach out. That
+    # is the correct outcome — the credential was in the store that just
+    # vanished — and logging back in doubles as proof that the recreated schema
+    # is writable, not merely present.
+    assert client.post("/api/login",
+                       json={"password": security.coach_password()}).status_code == 200
+
     # The schema is recreated on the next connection, so the endpoint works —
     # empty, because the data really was in the deleted file.
     r = client.get("/api/clients")
@@ -553,6 +565,9 @@ def test_api_recovers_when_the_database_file_is_deleted():
 def test_measurements_work_on_a_recreated_database():
     """The full schema comes back, not just the clients table."""
     os.remove(_tmp_db)
+    # Same reason as the test above: the session went with the file.
+    assert client.post("/api/login",
+                       json={"password": security.coach_password()}).status_code == 200
 
     c = client.post("/api/clients", json={
         "name": "Schema Check", "sex": "male", "age": 25, "height_cm": 180,
