@@ -30,9 +30,12 @@ services:
     # resolved from there.
     buildCommand: pip install -r requirements.txt
 
-    # uvicorn defaults to a single worker, and that default is load-bearing here:
-    # sessions live in a module-level dict in app/security.py, so a second worker
-    # would log the coach out at random as requests bounce between processes.
+    # One worker, and that is load-bearing — though no longer for the original
+    # reason. Sessions used to live in a module-level dict, so a second worker
+    # logged the coach out at random; they're in the database now. What is still
+    # in memory is the failed-login counter in app/security.py, so a second worker
+    # would give an attacker a second lockout budget against the one password
+    # guarding every client's health data.
     # Stated explicitly so nobody "optimises" it by adding --workers 4.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
 

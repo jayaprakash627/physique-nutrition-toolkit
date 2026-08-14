@@ -305,9 +305,12 @@ Honest boundaries, so you know what you're deploying:
 
 - **One coach, one password.** No user accounts, no roles, no multi-tenancy. Fine
   for you; not a platform for other trainers.
-- **Sessions are in memory.** A restart logs you out. That's a feature at this
-  scale (no long-lived credential lying around) but it doesn't survive multiple
-  server instances — don't scale beyond one worker without moving sessions out.
+- **Login throttling is per-process.** Sessions used to be the thing pinning this
+  app to one worker; they moved to the database, so that's no longer true. The
+  failed-attempt counters didn't — they're still a dict in memory, so a second
+  worker would hand an attacker a second lockout budget. That's why the start
+  command still says `--workers 1`, and it's the thing to fix first if this ever
+  needs to scale.
 - **No email.** You send the onboarding link yourself.
 - **The app does no encryption of its own.** In production Neon encrypts at rest
   and TLS covers the wire, so this is handled by the platform rather than by the

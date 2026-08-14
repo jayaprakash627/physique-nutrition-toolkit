@@ -21,12 +21,13 @@ Postgres before trusting a release:
 
     DATABASE_URL="postgresql://..." .venv/bin/python -m pytest
 
-Five tables:
+Six tables:
     clients       one row per person the coach tracks
     measurements  many rows per client, one per weigh-in — this is the time series
     reports       saved assessment snapshots, stored as JSON
     invites       one-time onboarding links, each with an unguessable token
     intakes       submitted onboarding questionnaires, stored as JSON
+    sessions      coach logins, stored as a hash of the token — see security.py
 
 `reports` stores the whole response as a JSON blob rather than normalising it
 into columns. That's deliberate: the report shape includes long-form explanation
