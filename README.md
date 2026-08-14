@@ -188,6 +188,27 @@ over someone's health data.
 
 This app holds other people's health information. That changes the checklist.
 
+### Where it's running now
+
+**https://physique-nutrition-toolkit.onrender.com** — Render, free plan,
+Singapore region, auto-deploying from `main`.
+
+Two properties of the free plan you need to know before you send anyone the link:
+
+- **It sleeps.** After ~15 minutes idle the instance spins down, and the next
+  request waits **50+ seconds** for a cold start. Nothing is broken; it's the
+  free tier waking up.
+- **The disk is ephemeral.** `toolkit.db` is recreated empty on every redeploy
+  and every spin-down. That makes this a **public demo**, not a place to keep
+  clients. To hold real data, follow the commented block at the bottom of
+  `render.yaml`: leave the free plan, mount a disk, point `TOOLKIT_DB` at it.
+
+`render.yaml` mirrors the live configuration and explains each setting. Render
+doesn't read it for this service (it was created by hand in the dashboard), so
+if you change a setting in one place, change it in the other.
+
+Steps 1–5 below apply whichever host you use.
+
 ### 1. Set a real password
 
 ```bash

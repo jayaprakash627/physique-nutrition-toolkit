@@ -1,0 +1,64 @@
+# Render Blueprint — a written-down copy of how this service is actually set up.
+#
+# HEADS UP: the live service at physique-nutrition-toolkit.onrender.com was
+# created by hand in the Render dashboard, and Render does NOT read this file for
+# dashboard-created services. Editing it changes nothing on its own. It exists so
+# the configuration isn't trapped in a web form:
+#
+#   * if the free service is ever suspended or deleted, New + → Blueprint → this
+#     repo rebuilds it correctly in one step instead of nine failed deploys
+#   * it documents WHY the settings are what they are, which a form can't
+#
+# If you change a setting in the dashboard, change it here too, or this drifts
+# into a lie.
+#
+# Free plan means an ephemeral disk: toolkit.db is recreated empty on every
+# redeploy and every idle spin-down. Fine for a public demo, NOT fine for real
+# client data — see the disk block at the bottom.
+
+services:
+  - type: web
+    name: physique-nutrition-toolkit
+    runtime: python
+    plan: free
+    region: singapore          # closest Render region to India
+
+    branch: main
+    # Root Directory is deliberately unset, i.e. the repo root. That is why
+    # requirements.txt must stay at the root — the build command below is
+    # resolved from there.
+    buildCommand: pip install -r requirements.txt
+
+    # uvicorn defaults to a single worker, and that default is load-bearing here:
+    # sessions live in a module-level dict in app/security.py, so a second worker
+    # would log the coach out at random as requests bounce between processes.
+    # Stated explicitly so nobody "optimises" it by adding --workers 4.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+
+    # Not set on the live service yet. Worth setting: /api/health also reports
+    # whether Coach mode is locked, so a broken deploy and an unlocked deploy
+    # both surface in the same place.
+    healthCheckPath: /api/health
+
+    envVars:
+      # Set by hand in the dashboard on the live service. Without it, client
+      # endpoints return 503 by design rather than running open.
+      - key: COACH_PASSWORD
+        sync: false
+
+    # ─────────────────────────────────────────────────────────────────────
+    #  Storing real client data? Do all three together:
+    #    1. Move off `plan: free` (free plans cannot mount disks)
+    #    2. Uncomment the disk block below
+    #    3. Uncomment TOOLKIT_DB above so the database lands on that disk
+    #  Then set up a backup. It's one file, so a scheduled copy is enough — and
+    #  it's plaintext, so treat the backup as confidential too.
+    # ─────────────────────────────────────────────────────────────────────
+    #
+    #   - key: TOOLKIT_DB
+    #     value: /var/data/toolkit.db
+    #
+    # disk:
+    #   name: toolkit-data
+    #   mountPath: /var/data
+    #   sizeGB: 1

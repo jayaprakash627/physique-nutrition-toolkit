@@ -1,6 +1,11 @@
 # Core — that's genuinely all of it.
-fastapi
-uvicorn[standard]
+#
+# Pinned to the versions the 240 tests actually ran against. Unpinned, a deploy
+# six months from now silently builds a different app than the one that passed
+# here — and this one holds health data, so "it probably still works" isn't good
+# enough. `~=` allows patch releases (security fixes) but not feature versions.
+fastapi~=0.141.1
+uvicorn[standard]~=0.52.1
 
 # Pydantic comes in with FastAPI and does all the input validation.
 # No database driver: SQLite ships with Python.
