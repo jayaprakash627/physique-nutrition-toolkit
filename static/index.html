@@ -524,6 +524,80 @@
         </div>
       </details>
 
+      <!-- Diet builder -->
+      <details class="tool" id="dietTool">
+        <summary>
+          <span class="tool__title">Diet builder</span>
+          <span class="tool__desc">
+            A day of ordinary food that hits the numbers — and the arithmetic behind them
+          </span>
+        </summary>
+        <div class="tool__body">
+          <p class="q__hint" style="margin-bottom:var(--sp-4)">
+            Fill this in, or open a completed questionnaire above and press
+            <strong>Build a diet from this</strong> — that way the diet, budget,
+            dislikes and allergies come from what the client actually told you.
+          </p>
+          <form id="dietForm">
+            <div class="q">
+              <span class="q__label">They are</span>
+              <div class="seg" data-seg="dSex">
+                <button type="button" data-value="male" aria-pressed="true">Male</button>
+                <button type="button" data-value="female" aria-pressed="false">Female</button>
+              </div>
+            </div>
+            <div class="row">
+              <label class="minifield"><span>Age</span>
+                <input type="number" id="d_age" value="28" min="10" max="100" /></label>
+              <label class="minifield"><span>Weight <em>kg</em></span>
+                <input type="number" id="d_weight" value="75" step="0.5" min="25" max="300" /></label>
+              <label class="minifield"><span>Height <em>cm</em></span>
+                <input type="number" id="d_height" value="175" step="0.5" min="100" max="250" /></label>
+            </div>
+            <div class="row">
+              <label class="minifield"><span>Goal</span>
+                <select id="d_goal">
+                  <option value="cut">Lose fat</option>
+                  <option value="maintain">Maintain</option>
+                  <option value="bulk">Build muscle</option>
+                </select></label>
+              <label class="minifield"><span>Diet</span>
+                <select id="d_diet">
+                  <option value="omnivore">Everything</option>
+                  <option value="eggetarian">Eggs &amp; dairy</option>
+                  <option value="vegetarian">Vegetarian</option>
+                  <option value="vegan">Vegan</option>
+                </select></label>
+              <label class="minifield"><span>Meals a day</span>
+                <input type="number" id="d_meals" value="4" min="1" max="8" /></label>
+            </div>
+            <div class="row">
+              <label class="minifield"><span>Training</span>
+                <select id="d_activity">
+                  <option value="sedentary">Almost none</option>
+                  <option value="light">1–2 days a week</option>
+                  <option value="moderate" selected>3–5 days a week</option>
+                  <option value="active">6–7 days a week</option>
+                </select></label>
+              <label class="minifield"><span>Food budget</span>
+                <select id="d_budget">
+                  <option value="tight">Keep it cheap</option>
+                  <option value="moderate" selected>Reasonable</option>
+                  <option value="flexible">Not a concern</option>
+                </select></label>
+            </div>
+            <div class="row">
+              <label class="minifield"><span>Won't eat <em>optional</em></span>
+                <input type="text" id="d_dislikes" maxlength="500" placeholder="e.g. eggs, mushrooms" /></label>
+              <label class="minifield"><span>Allergies <em>optional</em></span>
+                <input type="text" id="d_allergies" maxlength="500" placeholder="e.g. peanuts" /></label>
+            </div>
+            <button type="submit" class="btn btn--primary">Build the diet</button>
+          </form>
+          <div id="dietResult"></div>
+        </div>
+      </details>
+
       <div class="split">
       <div class="rail">
         <div class="card">

@@ -1425,3 +1425,62 @@ canvas { display: block; width: 100%; height: auto; }
     color: #555;
   }
 }
+
+/* --------------------------- Diet builder ------------------------------- */
+/* The macro colours come from .target--protein/fat/carbs, which set --tint,
+   so a step is tied to its macro by the same colour used everywhere else. */
+.mp-steps { display: grid; gap: var(--sp-4); margin-top: var(--sp-4); }
+
+.mp-step {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--tint, var(--accent));
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: var(--sp-4);
+  background: var(--surface-2);
+}
+.mp-step__head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.mp-step__n {
+  font-family: var(--font-mono); font-size: var(--fs-xs);
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint);
+}
+.mp-step__macro { font-weight: 600; color: var(--tint, var(--accent)); }
+.mp-step__rule { font-size: var(--fs-xs); color: var(--text-muted); }
+
+/* The arithmetic itself. Monospaced so the numbers line up and a coach can
+   follow it left to right the way they'd write it out by hand. */
+.mp-step__work {
+  font-family: var(--font-mono); font-size: var(--fs-sm);
+  color: var(--text); line-height: 1.7;
+  overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+}
+.mp-step__out { margin-top: var(--sp-2); font-size: var(--fs-sm); }
+.mp-step__out strong { color: var(--tint, var(--accent)); }
+.mp-step__why {
+  margin-top: var(--sp-3); font-size: 0.86rem;
+  color: var(--text-muted); line-height: 1.6;
+}
+
+.mp-check {
+  margin-top: var(--sp-4); padding: var(--sp-4);
+  border-radius: var(--radius-sm); background: var(--surface-2);
+  border: 1px solid var(--line); font-size: var(--fs-sm); line-height: 1.6;
+}
+.mp-check.is-ok  { border-color: var(--good); }
+.mp-check.is-off { border-color: var(--danger); }
+.mp-check .small { display: block; margin-top: var(--sp-2); }
+
+.mp-meal { margin-top: var(--sp-4); }
+.mp-meal__head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: var(--sp-3); margin-bottom: var(--sp-2); flex-wrap: wrap;
+}
+.mp-meal__label { font-weight: 600; }
+.mp-meal__macros {
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-muted);
+}
+
+.mp-options { margin: var(--sp-2) 0 0 var(--sp-4); display: grid; gap: var(--sp-2); }
+.mp-options li { list-style: disc; font-size: 0.86rem; }

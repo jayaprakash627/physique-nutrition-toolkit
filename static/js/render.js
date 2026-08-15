@@ -1381,6 +1381,10 @@ Object.assign(Render, {
               : `<button class="btn btn--primary btn--sm" data-convert="${data.id}">
                    Add as a client
                  </button>`}
+            <button class="btn btn--ghost btn--sm no-print" data-build-diet="${data.id}"
+                    title="Build a day's food from these answers — their diet, budget, dislikes and allergies are already here">
+              Build a diet from this
+            </button>
             <a class="btn btn--ghost btn--sm no-print" href="/api/intakes/${data.id}/csv"
                title="Download as CSV — for a dietitian, or to give the client their own copy">
               Export CSV
@@ -1405,5 +1409,156 @@ Object.assign(Render, {
           </div>` : ''}
       </div>
       ${sections}`;
+  },
+
+  /**
+   * The diet builder's output: the working first, then the food.
+   *
+   * The working leads deliberately. A coach handed a meal plan has to trust it;
+   * a coach shown the arithmetic can check it, correct it, and explain it to the
+   * client — which is the difference between using a tool and being able to
+   * defend one. Putting the food first would make the reasoning look like
+   * small print.
+   */
+  mealPlan(r) {
+    const m = r.math;
+    const day = r.day;
+    const TINT = { Protein: 'protein', Fat: 'fat', Carbs: 'carbs' };
+
+    const steps = m.steps.map(s => `
+      <div class="mp-step target--${TINT[s.macro] || 'kcal'}">
+        <div class="mp-step__head">
+          <span class="mp-step__n">Step ${s.n}</span>
+          <span class="mp-step__macro">${esc(s.macro)}</span>
+          <span class="mp-step__rule">${esc(s.rule)}</span>
+        </div>
+        <p class="mp-step__work">${esc(s.working)}</p>
+        <p class="mp-step__out">
+          <strong>${s.grams} g</strong> · ${s.kcal} kcal · ${s.pct_kcal}% of the day
+        </p>
+        <p class="mp-step__why">${esc(s.why)}</p>
+      </div>`).join('');
+
+    const meals = day.meals.map(meal => `
+      <div class="mp-meal">
+        <div class="mp-meal__head">
+          <span class="mp-meal__label">${esc(meal.label)}</span>
+          <span class="mp-meal__macros">${meal.kcal} kcal · ${meal.protein_g} g protein</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Food</th><th class="num">Amount</th><th class="num">kcal</th>
+              <th class="num">P</th><th class="num">C</th><th class="num">F</th>
+            </tr></thead>
+            <tbody>
+              ${meal.items.map(i => `
+                <tr>
+                  <td>
+                    <span class="food-row__name">${esc(i.name)}</span>
+                    <span class="food-row__portion">${esc(i.household)}</span>
+                  </td>
+                  <td class="num">${i.grams} g</td>
+                  <td class="num">${i.kcal}</td>
+                  <td class="num">${i.protein_g}</td>
+                  <td class="num">${i.carb_g}</td>
+                  <td class="num">${i.fat_g}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`).join('');
+
+    const LABEL = {
+      kcal: 'Calories', protein_g: 'Protein', carb_g: 'Carbs',
+      fat_g: 'Fat', fibre_g: 'Fibre',
+    };
+    const rows = Object.entries(day.totals).map(([key, t]) => {
+      const sign = t.off_by_pct > 0 ? '+' : '';
+      const band = t.allowed_over_pct === null
+        ? `at least ${t.target}${t.unit === 'kcal' ? '' : ' g'}`
+        : `−${t.allowed_under_pct}% to +${t.allowed_over_pct}%`;
+      return `
+        <tr>
+          <td class="strong">${LABEL[key]}</td>
+          <td class="num">${t.planned}</td>
+          <td class="num">${t.target}</td>
+          <td class="num">${sign}${t.off_by_pct}%</td>
+          <td class="num"><span class="small muted">${band}</span></td>
+          <td class="num">
+            <span class="chip chip--${t.close_enough ? 'good' : 'caution'}">
+              ${t.close_enough ? 'on target' : 'off'}
+            </span>
+          </td>
+        </tr>`;
+    }).join('');
+
+    const notes = (day.check || []).map(n => `
+      <div class="note">
+        <strong>${esc(n.what)}</strong><br />${esc(n.why)}
+        ${n.options && n.options.length ? `
+          <ul class="mp-options">
+            ${n.options.map(o => `<li>${esc(o)}</li>`).join('')}
+          </ul>` : ''}
+      </div>`).join('');
+
+    const assumed = r.from_intake && r.from_intake.assumed && r.from_intake.assumed.length
+      ? `<div class="note">
+           <strong>Built from ${esc(r.from_intake.client_name || 'the questionnaire')}'s
+           answers.</strong> The form doesn't ask everything the calculation needs,
+           so these were assumed — change them above if they're wrong:
+           <ul class="mp-options">
+             ${r.from_intake.assumed.map(a => `<li>${esc(a)}</li>`).join('')}
+           </ul>
+         </div>`
+      : '';
+
+    const excluded = (day.excluded || []).length
+      ? `<p class="small muted">Left out because of what they told you:
+           ${day.excluded.map(k => esc(k.replace(/_/g, ' '))).join(', ')}.</p>`
+      : '';
+
+    return `
+      <div class="card" style="margin-top:var(--sp-5)">
+        ${assumed}
+        ${r.safety ? Render.safety(r.safety) : ''}
+
+        <div class="card__head"><h3>How these numbers are worked out</h3></div>
+        <p class="small muted">
+          ${m.kcal_target} kcal a day · maintenance is about ${r.tdee} kcal ·
+          lean mass ${r.lean_mass_kg} kg (body fat ${r.bodyfat_pct}% by
+          ${esc(r.bodyfat_method)})
+        </p>
+        <div class="mp-steps">${steps}</div>
+
+        <div class="mp-check ${m.check.matches ? 'is-ok' : 'is-off'}">
+          <strong>Check:</strong> ${esc(m.check.working)}
+          ${m.check.matches ? '— it balances.' : '— these don\'t add up.'}
+          <span class="small muted">${esc(m.check.note)}</span>
+        </div>
+
+        <div class="mp-check">
+          <strong>Fibre:</strong> ${esc(m.fibre.working)}
+          <span class="small muted">${esc(m.fibre.why)}</span>
+        </div>
+
+        <div class="card__head" style="margin-top:var(--sp-6)"><h3>A day that hits it</h3></div>
+        ${excluded}
+        ${meals}
+
+        <div class="card__head" style="margin-top:var(--sp-6)"><h3>Did it land?</h3></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Target</th><th class="num">Planned</th><th class="num">Aim</th>
+              <th class="num">Off by</th><th class="num">Allowed</th><th class="num"></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        ${notes}
+        <div class="note">${esc(day.note)}</div>
+        ${r.sources ? Render.cites(r.sources) : ''}
+      </div>`;
   },
 });

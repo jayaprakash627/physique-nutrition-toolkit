@@ -157,6 +157,65 @@ already logged. Each one can be **exported as CSV** (for a dietitian when the
 health section says you should involve one, or to give the client their own copy
 as the consent screen promises) or **printed** as a confidential record.
 
+### The diet builder
+
+Coach mode only. It answers the two questions a coach actually gets asked, and it
+puts them in that order on purpose.
+
+**"Where did these numbers come from?"** — the split is written out as arithmetic
+you can check by hand, one step at a time, with the sum proved at the bottom:
+
+```
+Step 1 — Protein   [2.4 g per kg of LEAN mass]
+   60.0 kg lean × 2.4 = 144 g  →  144 g × 4 kcal = 576 kcal      144 g · 29%
+
+Step 2 — Fat       [25% of calories, then checked against a floor]
+   2000 kcal × 25% ÷ 9 = 56 g  →  above the floor of 44 g, so kept
+                               →  56 g × 9 kcal = 504 kcal        56 g · 25%
+
+Step 3 — Carbs     [whatever calories are left]
+   2000 − 576 − 504 = 920 kcal  →  ÷ 4 = 230 g                   230 g · 46%
+
+Check: 576 + 504 + 920 = 2000 kcal against a 2000 kcal target — it balances.
+Fibre: 2000 ÷ 1000 × 14 = 28 g
+```
+
+Each step also says *why it's in that position* — protein off lean mass because
+fat tissue doesn't need feeding, fat second because it's the one with a hard
+biological floor, carbs last because they have the widest safe range and are
+therefore the right place to absorb the adjustment.
+
+None of that is recalculated for display. It reads `formulas.macros()` — the same
+function the rest of the app uses — and narrates what it did, because an
+explanation that recomputes its own numbers is one that can quietly disagree with
+the plan it claims to describe, and nothing on screen would reveal it.
+
+**"So what do I actually eat?"** — a day of ordinary food, split across their
+meals. Dal, eggs, curd, rice, roti, oats, seasonal veg. Diet, budget, dislikes
+and allergies come straight from the questionnaire, so *Build a diet from this*
+on a submission needs no re-typing — which is exactly where a detail like "no
+eggs" gets dropped. On a tight budget it won't reach for whey or almonds.
+
+Food doesn't sort itself into one macro — two rotis carry 7 g of protein, dal
+carries 28 g of carbs — so the builder scores the whole plan against every target
+at once and adds or removes half a portion at a time, keeping whichever move gets
+closest. Filling protein first and carbs afterwards, which is the obvious
+approach, finishes 30% over on protein with no way back.
+
+**It reports the gap rather than hiding it.** Every macro shows planned vs
+target, the percentage out, and the tolerance it's being held to. Where a target
+genuinely can't be reached — a tight-budget eggetarian cut is the honest example,
+since whey and Greek yogurt are excluded and eggs bring 16 g of fat per portion —
+it names the constraint and offers the lever instead of shipping a miss quietly.
+Typical accuracy across diets, budgets and goals: **calories within 2%, fat
+within 3%, carbs within 5%.**
+
+Protein and fibre are allowed to run over, and that's deliberate: both are floors
+rather than ceilings, and an Indian vegetarian plan physically cannot avoid it
+when dal and chana are simultaneously the protein source and the carb source.
+Overshooting only matters if it crowds something else out, and that's caught
+separately by the calorie and carb tolerances.
+
 ## ▶️ Run it
 
 Needs **Python 3.10+**. No build step, no Node, no database server.
@@ -327,11 +386,19 @@ pip install -r requirements-dev.txt && pytest -q
 The suite sets its own `COACH_PASSWORD` and a temp database, so it needs no setup
 and never touches your real data.
 
-240 tests covering every formula against its published value, the safety
+299 tests covering every formula against its published value, the safety
 guardrails, knowledge-base integrity (every citation resolves, every nutrient is
 complete), the plain-language summary for every goal — including a check that no
 internal enum like `aggressive_cut` reaches text a person reads — the API
 contract, and the security boundary.
+
+The diet builder's tests are worth calling out, because the obvious test would
+miss the thing most worth protecting. They assert that the arithmetic shown to
+the coach reports **the same grams `formulas.macros()` produced**, rather than
+checking either against a hardcoded figure — a fixed expectation would keep
+passing while the explanation and the plan drifted apart together, which is the
+one failure a coach could never spot. The plans themselves are checked against
+the tolerances the module publishes, across every diet, budget and goal.
 
 The security tests are written the way an attacker probes: every client-data
 endpoint is hit with no session, with a forged cookie, and after logout, and each
@@ -350,7 +417,7 @@ removed.
 | Auth | stdlib `secrets` | Server-side sessions, constant-time compare, rate-limited login — no dependency |
 | Frontend | Plain HTML/CSS/JS | No framework, no build step — clone and run |
 | Charts | Hand-rolled Canvas | ~250 lines, DPR-aware, theme-reactive; no chart library |
-| Tests | pytest | 240 tests, no network, no fixtures beyond a temp DB |
+| Tests | pytest | 299 tests, no network, no fixtures beyond a temp DB |
 
 ### Layout
 
@@ -364,8 +431,9 @@ app/
 ├── models.py       Pydantic schemas with physiological bounds
 ├── security.py     coach auth: sessions, rate limiting, hardening
 ├── intake.py       the onboarding questionnaire + personalised priorities
-├── db.py           storage: clients, measurements, reports, invites, intakes
-│                   Postgres when DATABASE_URL is set, SQLite when it isn't
+├── planner.py      the diet builder: the shown working, then a day of food
+├── db.py           storage: clients, measurements, reports, invites, intakes,
+│                   sessions. Postgres when DATABASE_URL is set, SQLite when not
 └── knowledge/      ← the nutrition content, deliberately separated
     ├── sources.py         33 cited standards, one entry each
     ├── explanations.py    the "Why this number?" text per macro
@@ -620,6 +688,8 @@ clearly marked as not recommended, with the flags leading.
 | `GET` | `/api/intakes/{id}` | One submission + what stands out |
 | `GET` | `/api/intakes/{id}/csv` | Download it as CSV |
 | `POST` | `/api/intakes/{id}/convert` | Turn it into a tracked client |
+| `POST` | `/api/intakes/{id}/meal-plan` | **Build a diet from their answers** |
+| `POST` | `/api/meal-plan` | **Build a diet from typed-in numbers** |
 | `DELETE` | `/api/intakes/{id}` | Hard delete (right to erasure) |
 | `GET` `POST` | `/api/clients` | List / create clients |
 | `GET` `PUT` `DELETE` | `/api/clients/{id}` | Detail, update, delete (cascades) |

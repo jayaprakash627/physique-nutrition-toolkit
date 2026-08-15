@@ -75,6 +75,10 @@ const API = {
   convertIntake: (id)    => API.call(`/api/intakes/${id}/convert`, { method: 'POST' }),
   deleteIntake:  (id)    => API.call(`/api/intakes/${id}`, { method: 'DELETE' }),
 
+  // Diet builder — coach only
+  mealPlan:           (p)  => API.call('/api/meal-plan', { method: 'POST', body: p }),
+  mealPlanFromIntake: (id) => API.call(`/api/intakes/${id}/meal-plan`, { method: 'POST' }),
+
   clients:       ()            => API.call('/api/clients'),
   createClient:  (p)           => API.call('/api/clients', { method: 'POST', body: p }),
   client:        (id)          => API.call(`/api/clients/${id}`),

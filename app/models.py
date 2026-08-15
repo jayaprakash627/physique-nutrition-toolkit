@@ -253,3 +253,20 @@ class IntakeIn(BaseModel):
                 "Please tick the consent box."
             )
         return v
+
+
+class MealPlanIn(AssessmentIn):
+    """
+    An assessment, plus the three things that decide what food the plan may use.
+
+    All three come straight from the onboarding questionnaire, which is the point:
+    the coach shouldn't have to re-type what the client already told them, and a
+    plan built without them is the kind that gets politely ignored — full of food
+    the client can't afford, doesn't eat, or is allergic to.
+    """
+
+    budget: Literal["tight", "moderate", "flexible"] = "moderate"
+    dislikes: str = Field("", max_length=500,
+                          description="Free text from the intake — foods they won't eat")
+    allergies: str = Field("", max_length=500,
+                           description="Free text from the intake — allergies and intolerances")

@@ -750,6 +750,27 @@ function initClientEvents() {
       return;
     }
 
+    // Build a diet straight from what the client filled in. This is the path
+    // worth using: diet, budget, dislikes and allergies come from their own
+    // answers rather than being re-typed, which is where a detail like "no eggs"
+    // gets dropped.
+    const buildDiet = e.target.closest('[data-build-diet]');
+    if (buildDiet) {
+      const id = Number(buildDiet.dataset.buildDiet);
+      buildDiet.disabled = true;
+      buildDiet.innerHTML = '<span class="spinner"></span> Building…';
+      try {
+        const plan = await API.mealPlanFromIntake(id);
+        showDietPlan(plan);
+      } catch (err) {
+        toast(err.message, true);
+      } finally {
+        buildDiet.disabled = false;
+        buildDiet.textContent = 'Build a diet from this';
+      }
+      return;
+    }
+
     const delIntake = e.target.closest('[data-del-intake]');
     if (delIntake) {
       if (!confirm(
@@ -765,6 +786,53 @@ function initClientEvents() {
     }
   });
 }
+
+/* =============================================================================
+ *  Diet builder
+ * ========================================================================== */
+
+/**
+ * Show a built plan, open the tool, and scroll it into view.
+ *
+ * Shared by both routes in — the form below and the "build from this
+ * questionnaire" button — so a plan looks identical however it was produced.
+ */
+function showDietPlan(plan) {
+  const box = document.getElementById('dietResult');
+  box.innerHTML = Render.mealPlan(plan);
+  document.getElementById('dietTool').open = true;
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function runDietBuilder(e) {
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Working it out…';
+
+  try {
+    const plan = await API.mealPlan({
+      sex: segValue('dSex'),
+      age: numVal('d_age'),
+      weight_kg: numVal('d_weight'),
+      height_cm: numVal('d_height'),
+      goal: document.getElementById('d_goal').value,
+      diet: document.getElementById('d_diet').value,
+      activity: document.getElementById('d_activity').value,
+      meals: numVal('d_meals') ?? 4,
+      budget: document.getElementById('d_budget').value,
+      dislikes: document.getElementById('d_dislikes').value.trim(),
+      allergies: document.getElementById('d_allergies').value.trim(),
+    });
+    showDietPlan(plan);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Build the diet';
+  }
+}
+
 
 /* =============================================================================
  *  Init
@@ -789,6 +857,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('loginForm').addEventListener('submit', doLogin);
   document.getElementById('logoutBtn').addEventListener('click', doLogout);
   document.getElementById('inviteForm').addEventListener('submit', createInvite);
+  document.getElementById('dietForm').addEventListener('submit', runDietBuilder);
   initClientEvents();
 
   // Buttons that live inside re-rendered markup, handled by delegation.

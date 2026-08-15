@@ -43,6 +43,7 @@ from .models import (
     IntakeIn,
     InviteIn,
     LoginIn,
+    MealPlanIn,
     MeasurementIn,
     PrepPlanIn,
     StrengthIn,
@@ -559,6 +560,112 @@ def convert_intake(intake_id: int):
         })
 
     return {"client": client, "intake_id": intake_id}
+
+
+@app.post("/api/meal-plan", dependencies=[Depends(security.require_coach)])
+def meal_plan(payload: MealPlanIn):
+    """
+    Build a day's diet, and show the arithmetic behind it.
+
+    Coach-only, unlike the calculator. Not because the numbers are secret — the
+    public assessment already returns the same macro targets — but because this
+    is the tool a coach charges for, and because a meal plan reads as a
+    prescription in a way a calculator doesn't.
+    """
+    try:
+        data = payload.model_dump()
+        return engine.meal_plan_report(
+            data,
+            budget=data.pop("budget", "moderate"),
+            dislikes=data.pop("dislikes", ""),
+            allergies=data.pop("allergies", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.post("/api/intakes/{intake_id}/meal-plan",
+          dependencies=[Depends(security.require_coach)])
+def meal_plan_from_intake(intake_id: int):
+    """
+    The same plan, built from what the client already filled in.
+
+    This is the path that makes the questionnaire worth asking. Diet, budget,
+    dislikes and allergies are all in there, and re-typing them is exactly where
+    a detail like "no eggs" gets dropped.
+
+    Answers the form doesn't collect — activity multiplier, meals per day — fall
+    back to sensible middles. They're stated in the response rather than applied
+    silently, so a coach can see which numbers came from the client and which
+    came from a default.
+    """
+    row = db.get_intake(intake_id)
+    if not row:
+        raise HTTPException(404, "Submission not found")
+    a = row["answers"]
+
+    def num(key, default):
+        try:
+            return float(a.get(key) or default)
+        except (TypeError, ValueError):
+            return default
+
+    # The form offers "recomp"; the macro logic has no such mode, and maintain is
+    # genuinely what recomposition eats at.
+    goal = a.get("goal") if a.get("goal") in ("cut", "maintain", "bulk") else "maintain"
+    sessions = num("sessions_per_week", 3)
+    activity = ("sedentary" if sessions <= 1 else "light" if sessions <= 2
+                else "moderate" if sessions <= 4 else "active")
+
+    assumed = []
+    if not a.get("sessions_per_week"):
+        assumed.append("activity level (no training frequency given — assumed moderate)")
+    if not a.get("climate"):
+        assumed.append("climate (assumed hot)")
+    assumed.append("4 meals a day — the form doesn't ask, so change it if they eat fewer")
+
+    try:
+        payload = MealPlanIn(
+            sex=a.get("sex") if a.get("sex") in ("male", "female") else "male",
+            age=int(num("age", 30)),
+            weight_kg=num("weight_kg", 70),
+            height_cm=num("height_cm", 170),
+            goal=goal,
+            activity=activity,
+            diet=a.get("diet") if a.get("diet") in
+                 ("omnivore", "eggetarian", "vegetarian", "vegan") else "omnivore",
+            climate=a.get("climate") if a.get("climate") in
+                    ("temperate", "warm", "hot", "very_hot") else "hot",
+            meals=4,
+            budget=a.get("budget") if a.get("budget") in
+                   ("tight", "moderate", "flexible") else "moderate",
+            dislikes=(a.get("dislikes") or "")[:500],
+            allergies=(a.get("allergies") or "")[:500],
+        )
+    except Exception as e:                      # pydantic bounds, bad form data
+        raise HTTPException(
+            422,
+            "This submission is missing something the plan needs — usually height "
+            f"or weight. Fill it in on the client record and try again. ({e})",
+        )
+
+    data = payload.model_dump()
+    try:
+        report = engine.meal_plan_report(
+            data,
+            budget=data.pop("budget", "moderate"),
+            dislikes=data.pop("dislikes", ""),
+            allergies=data.pop("allergies", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+    report["from_intake"] = {
+        "intake_id": intake_id,
+        "client_name": row.get("full_name"),
+        "assumed": assumed,
+    }
+    return report
 
 
 @app.delete("/api/intakes/{intake_id}", dependencies=[Depends(security.require_coach)])

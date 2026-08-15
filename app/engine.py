@@ -24,7 +24,7 @@ Flow of `assess()`:
 from __future__ import annotations
 
 from . import formulas as f
-from . import safety
+from . import planner, safety
 from .knowledge import explanations as ex
 from .knowledge import foods, micronutrients, sources
 
@@ -942,5 +942,66 @@ def strength_report(inp: dict) -> dict:
             "adjust from what you actually hit."
         ),
         "sources": sources.resolve("EPLEY", "BRZYCKI"),
+        "disclaimer": sources.DISCLAIMER,
+    }
+
+
+def meal_plan_report(inp: dict, *, budget: str = "moderate",
+                     dislikes: str = "", allergies: str = "") -> dict:
+    """
+    The coach's diet builder: the macro arithmetic, then a day of real food.
+
+    Runs the same body-fat → composition → energy chain the public assessment
+    uses, so the calorie and protein figures here are the ones the client already
+    saw. Building a plan off a separately-derived number would be the fastest way
+    to have a coach and their client reading two different sets of targets.
+    """
+    goal = inp.get("goal", "cut")
+
+    bf = bodyfat_report(inp)
+    if not bf["chosen"]:
+        raise ValueError(
+            "Not enough measurements to estimate body fat. Provide either "
+            "neck and waist girths, or calliper skinfolds, or a body-fat "
+            "percentage you already know."
+        )
+    comp = composition_report(inp, bf["chosen"]["value"])
+    lbm = comp["lean_mass_kg"]
+    energy = energy_report(inp, lbm)
+
+    goal_key = goal if goal in energy["targets"] else "cut"
+    kcal = energy["targets"][goal_key]["kcal"]
+    macro_goal = "cut" if goal_key in ("cut", "aggressive_cut") else goal_key
+
+    built = planner.plan(
+        inp, kcal=kcal, lbm_kg=lbm, goal=macro_goal,
+        budget=budget, dislikes=dislikes, allergies=allergies,
+    )
+
+    # The safety layer still runs. A meal plan that hits its macros perfectly is
+    # not a safe plan if the calorie target underneath it was never safe, and the
+    # coach should see that flag on this screen rather than only on the
+    # assessment they may not have opened.
+    flags = safety.check_energy(
+        sex=inp["sex"], kcal_target=kcal, bmr=energy["bmr"]["chosen"],
+        tdee=energy["tdee"], weight_kg=inp["weight_kg"],
+        rate_pct_bw=abs(round((kcal - energy["tdee"]) * 7 / f.KCAL_PER_KG_FAT
+                              / inp["weight_kg"] * 100, 2)),
+        goal=macro_goal,
+    )
+
+    return {
+        "input": {
+            "weight_kg": inp["weight_kg"], "diet": inp.get("diet", "omnivore"),
+            "meals": inp.get("meals", 4), "goal": macro_goal, "budget": budget,
+        },
+        "bodyfat_pct": bf["chosen"]["value"],
+        "bodyfat_method": bf["chosen"]["method"],
+        "lean_mass_kg": lbm,
+        "tdee": round(energy["tdee"]),
+        "math": built["math"],
+        "day": built["day"],
+        "safety": safety.summarise(flags),
+        "sources": sources.resolve("IOM_MACRO", "WHO_FIBRE", "ISSN_PROTEIN", "IFCT_2017"),
         "disclaimer": sources.DISCLAIMER,
     }
