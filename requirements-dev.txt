@@ -3,3 +3,9 @@
 
 pytest          # the test runner
 httpx           # required by fastapi.testclient for the API tests
+
+# Browser tests (tests/e2e/). Opt-in — `pytest` alone never needs these, which
+# keeps a fresh clone one command away from a green suite. Run them with
+# `pytest -m e2e`, after a one-off `playwright install chromium`.
+playwright      # drives a real Chromium
+pytest-playwright   # the page/browser fixtures

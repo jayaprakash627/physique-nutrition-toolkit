@@ -409,6 +409,34 @@ complete), the plain-language summary for every goal — including a check that 
 internal enum like `aggressive_cut` reaches text a person reads — the API
 contract, and the security boundary.
 
+### Browser tests
+
+```bash
+playwright install chromium     # one-off
+pytest -m e2e                   # 19 tests, a real browser, a real server
+pytest -m e2e --headed          # watch them happen
+```
+
+Kept out of the default run on purpose: `pytest` alone stays at 299 tests needing
+nothing but Python and a temp file, so a fresh clone is one command from green.
+The browser suite boots the app on a free port with its own throwaway database —
+it cannot touch real data, and it forces `DATABASE_URL` empty so running it with
+a production URL exported can't write test clients into the live database.
+
+They cover what an API test structurally cannot: that the buttons are wired to
+the right handlers, that what the server returns actually renders, and that the
+three front doors stay separate in a browser holding cookies. An API test can
+prove `/api/clients` returns 401; only a browser can prove the Coach tab shows a
+password box rather than a client list. One test follows a client all the way —
+created, weighed twice, read back after a full page reload — because that reload
+is the only thing that proves the record reached the database rather than living
+in the page. Another runs the onboarding loop across two browser contexts, so the
+client filling in the form genuinely has no session, and asserts their link stops
+working after one use.
+
+Every page is also watched for uncaught JavaScript exceptions, which fail the
+test. Deliberate 401s are filtered out — the auth boundary working is not a bug.
+
 The diet builder's tests are worth calling out, because the obvious test would
 miss the thing most worth protecting. They assert that the arithmetic shown to
 the coach reports **the same grams `formulas.macros()` produced**, rather than
@@ -434,7 +462,7 @@ removed.
 | Auth | stdlib `secrets` | Server-side sessions, constant-time compare, rate-limited login — no dependency |
 | Frontend | Plain HTML/CSS/JS | No framework, no build step — clone and run |
 | Charts | Hand-rolled Canvas | ~250 lines, DPR-aware, theme-reactive; no chart library |
-| Tests | pytest | 299 tests, no network, no fixtures beyond a temp DB |
+| Tests | pytest + Playwright | 299 fast tests (no network, nothing beyond a temp DB) + 19 opt-in browser tests |
 
 ### Layout
 

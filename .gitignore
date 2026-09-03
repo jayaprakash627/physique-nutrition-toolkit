@@ -24,3 +24,7 @@ env/
 
 # Secrets — never commit
 .env
+
+# Playwright artefacts — screenshots/traces from a failed browser run
+test-results/
+playwright-report/
