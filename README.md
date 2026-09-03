@@ -233,11 +233,28 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Then, every time you want to run it:
+
 ```bash
-COACH_PASSWORD="pick-something-long" uvicorn app.main:app --reload
+./run.sh
 ```
 
 Then open **http://127.0.0.1:8000**. Interactive API docs at `/docs`.
+Stop it with Control-C. `PORT=8010 ./run.sh` if 8000 is taken.
+
+`run.sh` exists because the app reads real environment variables and
+deliberately does not parse `.env` itself — so starting it by hand means
+remembering to load the password first. The script does that, tells you if the
+password is missing, and says whether it's using Postgres or the local file. The
+equivalent by hand is:
+
+```bash
+set -a; source .env; set +a
+.venv/bin/uvicorn app.main:app --reload
+```
+
+**This is the local copy, for you.** The site your clients use is deployed and
+always running — there is nothing to start for that one.
 
 The calculator works without `COACH_PASSWORD`. Coach mode **refuses to run**
 without it and tells you so — a missing setting must never mean an unlocked door
