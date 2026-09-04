@@ -343,7 +343,14 @@ def _get_pool():
             min_size=0,
             max_size=4,          # one worker, a handful of clients
             max_idle=30,         # let Neon go back to sleep promptly
-            kwargs={"row_factory": dict_row},
+            # Fail fast. The default is 30 seconds, and a 30-second hang followed
+            # by a bare error is indistinguishable from the app being broken —
+            # measured that exact behaviour against an unreachable database. Neon
+            # resumes from suspend in a few hundred milliseconds, so anything
+            # past a handful of seconds is a real outage, not a cold start, and
+            # saying so quickly is far more useful than waiting.
+            timeout=8,
+            kwargs={"row_factory": dict_row, "connect_timeout": 5},
             open=True,
         )
     return _pool
@@ -354,14 +361,34 @@ def db():
     """Short-lived connection, schema-checked, committed on clean exit."""
     if USE_POSTGRES:
         global _pg_schema_checked
-        with _get_pool().connection() as conn:
-            # psycopg commits on clean exit and rolls back on exception, which is
-            # the same contract the SQLite branch below provides.
-            c = _Conn(conn)
-            if not _pg_schema_checked:
-                _ensure_schema(c)
-                _pg_schema_checked = True
-            yield c
+        pool = None
+        conn = None
+        # Getting a connection is separated from using one deliberately. Only
+        # acquisition can mean "the database is unreachable"; anything raised
+        # while the caller is using the connection is a query or caller error and
+        # must be allowed to propagate as itself. Wrapping the whole block —
+        # including the yield — would rewrite the caller's own exceptions into
+        # StoreUnreachable and send everyone hunting for a network problem.
+        try:
+            pool = _get_pool()
+            conn = pool.getconn()
+        except Exception as e:                      # noqa: BLE001
+            if conn is not None and pool is not None:
+                pool.putconn(conn)
+            raise StoreUnreachable(str(e)) from e
+
+        try:
+            # psycopg's connection context manager commits on clean exit and
+            # rolls back on exception — the same contract the SQLite branch below
+            # provides.
+            with conn:
+                c = _Conn(conn)
+                if not _pg_schema_checked:
+                    _ensure_schema(c)
+                    _pg_schema_checked = True
+                yield c
+        finally:
+            pool.putconn(conn)
         return
 
     conn = sqlite3.connect(DB_PATH)
@@ -691,6 +718,17 @@ def delete_invite(invite_id: int) -> bool:
 # ---------------------------------------------------------------------------
 #  Submitted intakes
 # ---------------------------------------------------------------------------
+
+class StoreUnreachable(Exception):
+    """
+    The database could not be reached at all.
+
+    Distinct from "this query failed" on purpose. An unreachable store has to be
+    reported as an outage — 503, say so, and point at the health check — whereas
+    treating it as an auth failure tells the coach to log in again, which is the
+    one thing that cannot possibly help and is exactly what the app used to do.
+    """
+
 
 class InviteAlreadyUsed(Exception):
     """Raised when a link was burned by another request while this one was in flight."""

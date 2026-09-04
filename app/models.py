@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 Sex = Literal["male", "female"]
 Goal = Literal["cut", "aggressive_cut", "maintain", "bulk"]
@@ -351,34 +351,78 @@ class CustomFoodIn(BaseModel):
             )
         return v
 
-    @field_validator("fat_100g")
+    @field_validator("fibre_100g")
     @classmethod
-    def _calories_match_the_macros(cls, v: float, info) -> float:
+    def _fibre_cannot_exceed_the_carbs_it_is_part_of(cls, v: float, info) -> float:
         """
-        Reconcile the stated calories against 4/4/9.
+        Fibre is a carbohydrate, so it cannot be more than the carbohydrate total.
 
-        Tolerance is wide on purpose. Labels round, fibre is counted differently
-        by different manufacturers, and sugar alcohols do not carry 4 kcal — so a
-        small disagreement is normal and rejecting it would be pedantic. A large
-        one is a typo: a stray zero, or grams typed into the calorie box.
+        Not pedantry — it is the check that stops the calorie band above being
+        widened by a typo. A fibre figure larger than the carbs would drag the
+        low end of the band down toward zero and let almost any calorie value
+        through.
         """
-        data = info.data
-        stated = data.get("kcal_100g")
-        protein, carb = data.get("protein_100g"), data.get("carb_100g")
-        if stated is None or protein is None or carb is None:
-            return v                            # an earlier field already failed
-
-        implied = protein * 4 + carb * 4 + v * 9
-        if implied == 0 and stated == 0:
-            return v
-        if stated == 0 or abs(implied - stated) > max(30, stated * 0.25):
+        carb = info.data.get("carb_100g")
+        if carb is not None and v > carb + 0.5:
             raise ValueError(
-                f"These don't add up: {protein:g} g protein + {carb:g} g carbs + "
-                f"{v:g} g fat works out to about {implied:.0f} kcal, but you typed "
-                f"{stated:g}. Protein and carbs are 4 kcal per gram, fat is 9. "
-                "One of the four numbers is probably mistyped."
+                f"Fibre ({v:g} g) is more than the total carbohydrate ({carb:g} g) "
+                "it's counted inside. On a label fibre is part of the carb figure, "
+                "not additional to it — check which is which."
             )
         return v
+
+    @model_validator(mode="after")
+    def _calories_are_in_the_right_ballpark(self):
+        """
+        Catch a mistyped number without rejecting real food.
+
+        A **model** validator, not a field one, and that matters: field
+        validators run in declaration order, so a check hung off `fat_100g`
+        cannot see `fibre_100g` — it is declared later and has not been validated
+        yet. The fibre subtraction below silently used zero, and psyllium husk was
+        rejected at its correct published figures. Model-level runs once, after
+        every field exists.
+
+        This began as a tight 4/4/9 check and that was wrong: it refused wheat
+        bran, oat bran and psyllium at their real values, all of which a coach
+        here would plausibly add. A false rejection is the worse failure — a
+        missed typo makes one bad food, while a rule that refuses correct data
+        stops the coach using their own tool with no way forward.
+
+        Two reasons a flat 4/4/9 is too strict:
+
+        * **Fibre sits inside the carbohydrate figure but yields almost no
+          energy.** Psyllium is 88 g of "carbohydrate" of which 80 g is fibre;
+          at 4 kcal/g that implies 364 kcal against a real 71.
+        * **Published values use food-specific Atwater factors.** USDA lists oat
+          bran at 246 kcal where the flat sum gives 336, because oat protein,
+          starch and fat are each less completely absorbed.
+
+        So it is a band: fibre free at the bottom, fibre as ordinary carbohydrate
+        at the top, generous either side. The mistake worth catching is an
+        order-of-magnitude one — a stray zero, or grams typed into the calorie
+        box — not the 30% spread real foods genuinely show.
+        """
+        protein, carb, fat = self.protein_100g, self.carb_100g, self.fat_100g
+        fibre = self.fibre_100g or 0
+        stated = self.kcal_100g
+
+        lo = protein * 4 + max(0.0, carb - fibre) * 4 + fat * 9
+        hi = protein * 4 + carb * 4 + fat * 9
+
+        # Near-zero foods (black coffee, most leafy veg) have nothing to check.
+        if hi < 20:
+            return self
+
+        if not (lo * 0.45 <= stated <= hi * 1.6 + 40):
+            raise ValueError(
+                f"That calorie figure doesn't fit the macros: {protein:g} g "
+                f"protein, {carb:g} g carbs and {fat:g} g fat work out to roughly "
+                f"{lo:.0f}-{hi:.0f} kcal, but you typed {stated:g}. Protein and "
+                "carbs are about 4 kcal per gram and fat is 9. One of the four "
+                "numbers is probably mistyped - check the calories first."
+            )
+        return self
 
     @field_validator("piece_grams")
     @classmethod

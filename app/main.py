@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
@@ -84,6 +86,30 @@ async def harden(request: Request, call_next):
     if request.url.path.startswith(PRIVATE_PREFIXES):
         security.no_store(response)
     return response
+
+
+@app.exception_handler(db.StoreUnreachable)
+def store_unreachable_handler(request: Request, exc: db.StoreUnreachable):
+    """
+    Turn an unreachable database into an answer, not a 30-second bare 500.
+
+    Measured against a dead Postgres: the login hung for 30 seconds and returned
+    "Internal Server Error" with no indication of why, while /api/health happily
+    reported db_durable true. The pool now fails fast and this says what happened
+    — and deliberately does not echo the driver's message, which contains the
+    connection string and therefore the database password.
+    """
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": (
+                "Can't reach the database right now, so anything involving saved "
+                "client data is unavailable. The calculator still works. If this "
+                "persists, check your database is awake and reachable, then call "
+                "/api/health/db for the connection status."
+            )
+        },
+    )
 
 
 @app.exception_handler(sqlite3.Error)
@@ -500,17 +526,55 @@ def export_intake_csv(intake_id: int):
         "Consent version": row.get("consent_version") or "",
     })
 
-    # A filename built from the client's name, stripped to characters that are
-    # safe in a Content-Disposition header and on every filesystem.
+    # A filename built from the client's name.
+    #
+    # The ASCII restriction is not fussiness — it was a 500. `isalnum()` is True
+    # for Devanagari, Tamil and CJK letters, so a name like "प्रिया शर्मा" passed
+    # the old filter and landed raw in a Content-Disposition header, which
+    # Starlette encodes as latin-1: UnicodeEncodeError, and the coach got a page
+    # reading "Internal Server Error". The intake field invites exactly this —
+    # "as you'd like me to write it on your plan" — so it fires on the very
+    # clients this is launching to, and it broke the consent screen's promise
+    # that a client can ask for a copy of their data.
+    #
+    # So: a plain-ASCII filename for the header itself, plus the real name in the
+    # RFC 5987 `filename*` parameter, which every current browser prefers. The
+    # client gets a file named properly and nothing 500s.
     raw_name = (row.get("full_name") or f"intake-{intake_id}")
-    safe = "".join(ch if ch.isalnum() or ch in "-_ " else "" for ch in raw_name).strip()
+
+    # Strip anything path-shaped once, up front, so BOTH forms of the name below
+    # are safe by construction rather than relying on the browser to sanitise.
+    # Percent-encoding alone is not quite enough: it turns "/" into "%2F" but
+    # leaves ".." sitting there literally, and "safe by construction" is a much
+    # easier property to keep true than "safe because the client cleans up".
+    # Letters in every script survive — that is the whole point of the change.
+    cleaned = "".join(
+        " " if ch in '/\\:*?"<>|' or ord(ch) < 32 else ch for ch in raw_name
+    )
+    while ".." in cleaned:
+        cleaned = cleaned.replace("..", ".")
+    cleaned = " ".join(cleaned.split()) or f"intake-{intake_id}"
+
+    safe = "".join(
+        ch if (ch.isascii() and (ch.isalnum() or ch in "-_ ")) else ""
+        for ch in cleaned
+    ).strip()
     safe = (safe.replace(" ", "-") or f"intake-{intake_id}")[:40]
+    encoded = quote(f"{cleaned}-intake.csv", safe="")
 
     return Response(
-        content=csv_text,
+        # A UTF-8 BOM, purely for Excel on Windows: without it a Hindi or Tamil
+        # answer opens as mojibake, which makes the export useless for the client
+        # population it exists to serve. Added here rather than inside to_csv()
+        # so the function stays a clean CSV producer and its tests keep asserting
+        # on a header row of exactly ["Section", "Question", "Answer"].
+        content="\ufeff" + csv_text,
         media_type="text/csv; charset=utf-8",
         headers={
-            "Content-Disposition": f'attachment; filename="{safe}-intake.csv"',
+            "Content-Disposition": (
+                f'attachment; filename="{safe}-intake.csv"; '
+                f"filename*=UTF-8''{encoded}"
+            ),
             # This is somebody's health data leaving the app — never cache it.
             "Cache-Control": "no-store",
         },
@@ -748,8 +812,17 @@ def list_prices():
 
 @app.put("/api/prices/{food_key}", dependencies=[Depends(security.require_coach)])
 def set_price(food_key: str, payload: PriceIn):
-    """Save what this food actually costs the coach."""
-    if food_key not in costing.PURCHASE:
+    """
+    Save what this food actually costs the coach.
+
+    Validated against the MERGED table, not the shipped one. The price list is
+    built from `catalog.purchase(...)`, which includes the coach's own foods, and
+    every row renders the same editable box — so validating against
+    `costing.PURCHASE` alone meant a coach could type a new price for their own
+    food, in a field the app had just offered them, and get "No such food" every
+    single time.
+    """
+    if food_key not in catalog.purchase(db.custom_foods_all()):
         raise HTTPException(404, f"No such food: {food_key}")
     db.prices_set(food_key, payload.price)
     return {"key": food_key, "price": payload.price, "is_yours": True}
@@ -757,11 +830,18 @@ def set_price(food_key: str, payload: PriceIn):
 
 @app.delete("/api/prices/{food_key}", dependencies=[Depends(security.require_coach)])
 def reset_price(food_key: str):
-    """Drop an override and fall back to the shipped default."""
-    if food_key not in costing.PURCHASE:
+    """
+    Drop an override and fall back to the default.
+
+    For a curated food that default is the shipped price. For the coach's own
+    food it is the price they set when they added it — there is no shipped price
+    to fall back to, so "reset" means "back to what you first told me".
+    """
+    table = catalog.purchase(db.custom_foods_all())
+    if food_key not in table:
         raise HTTPException(404, f"No such food: {food_key}")
     db.prices_reset(food_key)
-    return {"key": food_key, "price": costing.PURCHASE[food_key]["price"], "is_yours": False}
+    return {"key": food_key, "price": table[food_key]["price"], "is_yours": False}
 
 
 @app.delete("/api/intakes/{intake_id}", dependencies=[Depends(security.require_coach)])
@@ -905,21 +985,65 @@ def health():
         "coach_mode_configured": security.is_configured(),
         "coach_mode_locked": security.is_configured(),
         "db_backend": db.backend(),
-        "db_durable": db.backend() == "postgres",
+        # Renamed from `db_durable`, which was a claim this endpoint has no right
+        # to make. It performs no database I/O by design (see above), so all it
+        # ever knew was whether a durable backend was CONFIGURED — and it
+        # cheerfully reported db_durable: true while Postgres was completely
+        # unreachable. That is the check the README tells a coach to run at
+        # switch-over, so the one moment it was consulted was the one moment it
+        # was most likely to be wrong.
+        "db_durable_configured": db.backend() == "postgres",
+        "db_reachability_checked_here": False,
+        "db_check": "/api/health/db",
     }
 
 
-@app.get("/api/health/db", dependencies=[Depends(security.require_coach)])
+# One real connection attempt per minute, at most. The result is cached in
+# between so repeated calls are free.
+_DB_CHECK_TTL_SECONDS = 60
+_db_check: dict = {"at": 0.0, "result": None}
+
+
+@app.get("/api/health/db")
 def health_db():
     """
     Can the app actually reach the store right now?
 
-    Coach-only, for two reasons. It's the coach who needs the answer, and leaving
-    it open would hand anyone a way to force a connection on demand — which on a
-    database that bills for awake time is a cheap way to run up someone else's
-    bill until writes start failing.
+    This used to require a coach session, for two reasons that were both sound:
+    the coach is who needs the answer, and an open endpoint that opens a
+    connection on demand is a cheap way to run up the bill on a database that
+    charges for awake time.
+
+    It was also useless exactly when it mattered. Sessions live in the database,
+    so when the database is unreachable the login fails — and the one endpoint
+    that would explain why sat behind that login. Measured against a dead
+    Postgres: /api/health said durable, the login hung 30 seconds and returned a
+    bare 500, and this returned 401.
+
+    So it is public now, with both original concerns kept:
+      * the result is cached for a minute, so the bill exposure is one connection
+        per minute rather than one per request
+      * it returns a boolean and nothing else. Never the driver's message, which
+        contains the connection string and therefore the database password.
     """
-    return db.health()
+    now = time.time()
+    if _db_check["result"] and now - _db_check["at"] < _DB_CHECK_TTL_SECONDS:
+        return {**_db_check["result"], "cached": True}
+
+    raw = db.health()
+    result = {
+        "backend": raw["backend"],
+        "reachable": raw["reachable"],
+        "durable": raw["backend"] == "postgres" and raw["reachable"],
+        "hint": (
+            None if raw["reachable"] else
+            "The database did not answer. If this is Neon, check the project is "
+            "not suspended or over its storage limit at console.neon.tech. The "
+            "public calculator is unaffected."
+        ),
+    }
+    _db_check.update({"at": now, "result": result})
+    return {**result, "cached": False}
 
 
 # Mounted last so it doesn't shadow the API routes above.

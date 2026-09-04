@@ -26,7 +26,16 @@ const API = {
     try {
       res = await fetch(path, opts);
     } catch (e) {
-      throw new Error('Could not reach the server. Is uvicorn still running?');
+      // This is the single most likely error a paying client ever sees, at the
+      // worst possible moment: eight minutes of health answers typed on a phone,
+      // consent ticked, Send tapped, and the mobile signal drops — or the host's
+      // proxy answers while the free instance is still waking up. "Is uvicorn
+      // still running?" is a message for the developer, addressed to someone who
+      // has never heard the word, and it reads like their answers are gone.
+      // They are not: the page still holds them, so say so and let them retry.
+      throw new Error(
+        'The connection dropped before that could be sent. Nothing is lost — your '
+        + 'answers are still on this page. Check your signal and try again.');
     }
 
     if (!res.ok) {

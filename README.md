@@ -152,6 +152,16 @@ Two design decisions carry the whole thing:
   target ever reaches that screen. The insight earns the call; the numbers are
   what you're paid for.
 
+The CSV export is hardened in two ways that both came from a pre-launch audit.
+A client's name in **any script** works — Devanagari, Tamil, CJK — where it used
+to return a bare 500, because `isalnum()` is true for those letters so they
+landed raw in a header that gets encoded as latin-1; the file now carries an
+ASCII name plus the real one in the RFC 5987 parameter, and a UTF-8 BOM so Excel
+on Windows doesn't open Hindi as mojibake. And any answer beginning with `=`, `+`,
+`-` or `@` is prefixed with an apostrophe, because a spreadsheet evaluates those:
+an injury history of "-5 kg last year" displayed as `#NAME?` in the file handed to
+a dietitian, and the clinical section is exactly where that lands.
+
 Submissions convert to a tracked client in one click, with their starting weight
 already logged. Each one can be **exported as CSV** (for a dietitian when the
 health section says you should involve one, or to give the client their own copy
@@ -276,13 +286,30 @@ somewhere else. Set `DATABASE_URL` and the app uses Postgres; leave it unset and
 it falls back to a local SQLite file, which is right for development and
 **wrong** for anything holding a real client.
 
-The check that catches that mistake:
+The check that catches that mistake — and it takes **both** of these, which is
+the correction to what this section used to say:
 
 ```bash
-curl -s https://your-domain/api/health | grep db_durable
+curl -s https://your-domain/api/health     | grep db_durable_configured
+curl -s https://your-domain/api/health/db  | grep -E 'reachable|durable'
 ```
 
-`"db_durable": false` means the deploy is writing to a disk that will be erased.
+The first says whether a durable backend is **configured**. The second is the
+only one that says whether it actually **works** — it opens a real connection.
+
+That distinction was a real trap. `/api/health` deliberately performs no database
+I/O, because the host polls it constantly and Neon bills for time it is awake, so
+a health check that opened a connection would hold the database awake around the
+clock and burn a month's free compute in about four days. But it used to report a
+field called `db_durable`, which read as a promise it could not keep: pointed at a
+completely unreachable Postgres it still answered `"db_durable": true`. The field
+is now named `db_durable_configured`, and `/api/health/db` is public (cached for a
+minute, and it returns a boolean and nothing else — never the driver's message,
+which contains the password) because it needs to be reachable at exactly the
+moment the login is the thing that is broken.
+
+`"db_durable_configured": false` means the deploy is writing to a disk that will
+be erased. `"reachable": false` from the second means it is configured and down.
 
 One property of the free plan remains, and you should know it before sending
 anyone a link: **it sleeps.** After ~15 minutes idle the instance spins down and
@@ -403,7 +430,7 @@ pip install -r requirements-dev.txt && pytest -q
 The suite sets its own `COACH_PASSWORD` and a temp database, so it needs no setup
 and never touches your real data.
 
-346 tests covering every formula against its published value, the safety
+349 tests covering every formula against its published value, the safety
 guardrails, knowledge-base integrity (every citation resolves, every nutrient is
 complete), the plain-language summary for every goal — including a check that no
 internal enum like `aggressive_cut` reaches text a person reads — the API
@@ -497,7 +524,7 @@ pytest -m e2e                   # 39 tests, a real browser, a real server
 pytest -m e2e --headed          # watch them happen
 ```
 
-Kept out of the default run on purpose: `pytest` alone stays at 346 tests needing
+Kept out of the default run on purpose: `pytest` alone stays at 349 tests needing
 nothing but Python and a temp file, so a fresh clone is one command from green.
 The browser suite boots the app on a free port with its own throwaway database —
 it cannot touch real data, and it forces `DATABASE_URL` empty so running it with
@@ -549,7 +576,7 @@ removed.
 | Auth | stdlib `secrets` | Server-side sessions, constant-time compare, rate-limited login — no dependency |
 | Frontend | Plain HTML/CSS/JS | No framework, no build step — clone and run |
 | Charts | Hand-rolled Canvas | ~250 lines, DPR-aware, theme-reactive; no chart library |
-| Tests | pytest + Playwright | 346 fast tests (no network, nothing beyond a temp DB) + 39 opt-in browser tests |
+| Tests | pytest + Playwright | 349 fast tests (no network, nothing beyond a temp DB) + 39 opt-in browser tests |
 
 ### Layout
 

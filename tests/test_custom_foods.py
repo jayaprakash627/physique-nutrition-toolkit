@@ -90,7 +90,7 @@ def test_custom_foods_make_no_micronutrient_claims():
 def test_calories_that_disagree_with_the_macros_are_refused():
     with pytest.raises(ValidationError) as e:
         CustomFoodIn(**{**RAGI, "kcal_100g": 33})       # a stray zero
-    assert "don't add up" in str(e.value)
+    assert "doesn't fit the macros" in str(e.value)
 
 
 def test_macros_that_exceed_the_hundred_grams_they_are_in_are_refused():

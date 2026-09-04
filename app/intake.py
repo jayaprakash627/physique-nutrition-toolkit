@@ -575,6 +575,25 @@ def to_csv(answers: dict, *, meta: dict | None = None) -> str:
     import csv
     import io
 
+    def cell(value) -> str:
+        """
+        Stop a spreadsheet treating a client's words as a formula.
+
+        Excel, Sheets and LibreOffice evaluate any cell beginning with = + - or @
+        (and a leading tab or carriage return). The realistic damage here is not
+        an attack, it's silence: an injury history of "-5 kg last year", a
+        supplements answer of "+1 whey scoop", a contact of "@priya_fit" all
+        display as #NAME? in the file handed to a dietitian, and the clinical
+        section is exactly where that lands. The hostile case is the same bug —
+        =HYPERLINK(...) or a DDE payload evaluating when the coach opens the file.
+
+        A leading apostrophe is the standard fix: spreadsheets treat the rest as
+        literal text and don't display it. Applied on write only, so what is
+        stored stays exactly what the client typed.
+        """
+        text = "" if value is None else str(value)
+        return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
     buf = io.StringIO()
     writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
 
@@ -583,19 +602,21 @@ def to_csv(answers: dict, *, meta: dict | None = None) -> str:
         for field in section["fields"]:
             value = label_for_answer(field, answers.get(field["key"]))
             if value:
-                writer.writerow([section["title"], field["label"], value])
+                writer.writerow([section["title"], field["label"], cell(value)])
 
     # Any answer whose question has since been removed or renamed. Without this,
     # editing the questionnaire would silently drop data a client already gave.
     known = {f["key"] for f in flatten_fields()}
     for key, value in answers.items():
         if key not in known and str(value).strip():
-            writer.writerow(["Other (question since changed)", key, str(value)])
+            writer.writerow(["Other (question since changed)", key, cell(value)])
 
     if meta:
         writer.writerow([])
         for label, value in meta.items():
-            writer.writerow(["Record", label, value])
+            # App-generated timestamps, so injection is not the risk here — routed
+            # through the same helper so there is one write path, not two.
+            writer.writerow(["Record", label, cell(value)])
 
     return buf.getvalue()
 

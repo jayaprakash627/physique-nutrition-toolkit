@@ -34,6 +34,8 @@ no estimate, because it gets quoted to a client.
 
 from __future__ import annotations
 
+import math
+
 from .knowledge import foods
 
 # When the default prices below were last sanity-checked. Shown in the UI so a
@@ -172,7 +174,17 @@ def _quantity(food_key: str, grams: float, table: dict | None = None) -> dict | 
         "unit_label": UNIT_LABEL[row["unit"]],
         "raw_grams": round(raw_grams),
         # Eggs and bananas come in whole numbers; you cannot buy 2.4 eggs.
-        "units": __import__("math").ceil(units - 1e-9) if row["unit"] == PIECE else round(units, 3),
+        # Round UP for whole units, never to nearest. Two reasons, and the first
+        # was a live bug: a half portion of a food whose portion IS one piece —
+        # a banana, an apple, a guava — lands on exactly 0.5 units, and Python's
+        # round() sends 0.5 to 0. The shopping list still said "1 piece", because
+        # the display floors at one, while the cost column charged nothing. The
+        # bill silently understated itself and nothing looked wrong.
+        #
+        # The second reason is that ceil is simply the honest answer to the
+        # question this field asks. You cannot buy half a banana, so what you BUY
+        # is the next whole one.
+        "units": math.ceil(units - 1e-9) if row["unit"] == PIECE else round(units, 3),
         "raw_factor": row["raw_factor"],
         "why_raw": row.get("why"),
     }

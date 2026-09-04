@@ -148,15 +148,19 @@ def session_valid(token: str | None) -> bool:
     """
     Is this cookie a live session?
 
-    Fails closed. If the database can't be reached the answer is False, not an
-    exception — an unreachable store must read as "not authenticated" rather than
-    surfacing a 500 from inside the auth check, and a coach who can't reach the
-    database has nothing to read anyway.
+    Fails closed: anything that isn't a confirmed live session is False. What it
+    no longer does is flatten "the database is unreachable" into the same answer.
+    That let an outage present as a plain 401, so the app told the coach to log
+    in again — the one action that cannot possibly help — while the actual cause
+    went unreported. `db.StoreUnreachable` is allowed through for `require_coach`
+    to turn into a 503; every other failure still reads as not-authenticated.
     """
     if not token:
         return False
     try:
         return db.session_live(_fingerprint(token))
+    except db.StoreUnreachable:
+        raise
     except Exception:                             # noqa: BLE001
         return False
 
@@ -276,20 +280,39 @@ NOT_CONFIGURED_MESSAGE = (
 )
 
 
+STORE_DOWN_MESSAGE = (
+    "Can't reach the database, so client data is unavailable right now. This is "
+    "not a login problem — logging in again won't help, because the session store "
+    "is in the same database. Check https://console.neon.tech and then "
+    "/api/health/db, which reports whether the connection is working."
+)
+
+
 def require_coach(request: Request) -> None:
     """
     FastAPI dependency. Attach to every route that reads or writes client data.
 
-    Three outcomes:
+    Four outcomes:
       503 — no password configured (fail closed, with setup instructions)
+      503 — the database is unreachable, said plainly
       401 — not logged in, or the session expired
       pass through — valid session
+
+    The second one is separated from the third for a reason worth keeping. With
+    sessions stored in the database, an outage made every coach route answer 401
+    — so the app said "please log in", the login itself then failed after a long
+    hang, and nothing anywhere named the real cause. Telling someone to retry the
+    one action that cannot work is worse than saying nothing.
     """
     if not is_configured():
         raise HTTPException(503, NOT_CONFIGURED_MESSAGE)
 
     token = request.cookies.get(COOKIE_NAME)
-    if not session_valid(token):
+    try:
+        ok = session_valid(token)
+    except db.StoreUnreachable:
+        raise HTTPException(503, STORE_DOWN_MESSAGE)
+    if not ok:
         raise HTTPException(401, "Please log in to Coach mode.")
 
 

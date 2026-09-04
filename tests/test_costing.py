@@ -145,25 +145,33 @@ def test_weekly_and_monthly_track_the_daily_figure_without_being_a_multiple_of_i
     """
     Close to the daily figure scaled up, but deliberately not equal to it.
 
-    Equal would mean the rounding of whole-unit foods was being applied once per
-    day and multiplied, which understates the bill — see the week test below.
-    Wildly different would mean the scaling is broken. This pins it between the
-    two.
+    Equal would mean whole-unit rounding was applied once per day and then
+    multiplied, and the direction of the error is informative: buying a week at
+    once rounds up ONCE, while seven separate days round up seven times, so a
+    weekly shop is slightly cheaper than seven daily ones. That is true of real
+    shopping, not an artefact.
+
+    Wildly different would mean the scaling is broken, so this pins it between
+    the two.
     """
     c = costing.cost_day(_day())
-    assert c["per_day"] * 7 <= c["per_week"] <= c["per_day"] * 7 * 1.15
-    assert c["per_day"] * 30 <= c["per_month"] <= c["per_day"] * 30 * 1.15
+    assert c["per_day"] * 7 * 0.85 <= c["per_week"] <= c["per_day"] * 7
+    assert c["per_day"] * 30 * 0.85 <= c["per_month"] <= c["per_day"] * 30
 
 
 def test_a_week_is_priced_as_a_week_not_as_seven_rounded_days():
     """
-    Whole-unit foods have to round, and rounding seven times is not the same as
-    rounding once.
+    Whole-unit foods have to round, and rounding seven times is not rounding once.
 
-    4.5 eggs a day rounds to 4, and seven of those is 28 — but the week genuinely
-    needs 31.5, so you buy 32. Multiplying a rounded day understates the bill,
-    always in the same direction, and the error grows with the number of
-    piece-priced foods. The weekly figure must come from a week's quantities.
+    Half a banana a day becomes one banana, because you cannot buy half — so
+    seven days of that is seven bananas, while a week's shop needs four. The
+    weekly figure has to come from a week's quantities, and it is therefore
+    slightly LOWER than seven daily figures, not higher.
+
+    This test previously asserted the opposite, from back when pieces rounded to
+    nearest instead of up. Rounding to nearest sent an exact 0.5 to zero, so a
+    banana appeared on the shopping list and was billed at nothing; fixing that
+    to round up also flipped which way this comparison goes.
     """
     one = costing.cost_day(_day(), days=1)
     seven = costing.cost_day(_day(), days=7)
@@ -171,8 +179,23 @@ def test_a_week_is_priced_as_a_week_not_as_seven_rounded_days():
     assert seven["total"] == pytest.approx(one["per_week"], rel=0.01), (
         "per_week is not being computed at a week's scale"
     )
-    # And it is at least as much as the naive multiplication, never less.
-    assert one["per_week"] >= one["per_day"] * 7 - 0.01
+    assert one["per_week"] <= one["per_day"] * 7 + 0.01, (
+        "a weekly shop should never cost more than seven daily ones"
+    )
+
+
+def test_a_piece_priced_food_is_never_billed_at_zero():
+    """
+    A regression. Pieces rounded to nearest, and Python sends 0.5 to zero — so a
+    half portion of a food whose portion IS one piece (a banana, an apple, a
+    guava) showed "1 piece" on the shopping list and charged nothing. The bill
+    silently understated itself and nothing looked wrong.
+    """
+    for key in ("banana", "apple", "guava", "orange", "eggs_whole"):
+        grams = foods.BY_KEY[key]["grams"] / 2          # half a portion
+        q = costing._quantity(key, grams)
+        assert q["units"] >= 1, f"{key} rounded to {q['units']} pieces"
+        assert q["units"] * costing.PURCHASE[key]["price"] > 0, f"{key} billed at zero"
 
 
 def test_a_coachs_own_price_changes_the_total():

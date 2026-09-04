@@ -221,7 +221,11 @@ def test_a_mistyped_food_is_refused_with_a_readable_message(coach):
     coach.wait_for_selector(".toast", timeout=10_000)
     msg = coach.locator(".toast").inner_text()
 
-    assert "don't add up" in msg
+    assert "doesn't fit the macros" in msg
+    # It shows the plausible RANGE, not a single figure, because real foods
+    # deviate from a flat 4/4/9 — fibre yields almost nothing and published
+    # values use food-specific Atwater factors.
+    assert "roughly" in msg and "kcal" in msg
     assert "f_kcal" not in msg and "100g" not in msg and "Value error" not in msg
     assert "Typo Food" not in coach.locator("#customFoodList").inner_text()
 

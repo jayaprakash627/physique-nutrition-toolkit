@@ -570,7 +570,12 @@ def test_csv_export_is_well_formed_with_hostile_answers(coach, anon):
     # Somebody's health data leaving the app must not be cached.
     assert "no-store" in r.headers["cache-control"]
 
-    rows = list(csv.reader(io.StringIO(r.text)))
+    # Decoded as utf-8-sig because the response carries a UTF-8 BOM. That is
+    # deliberate and it is for Excel on Windows, which otherwise opens a Hindi or
+    # Tamil answer as mojibake — which would make the export useless for exactly
+    # the clients it exists to serve. Any real CSV reader strips it; this is what
+    # "strips it" looks like.
+    rows = list(csv.reader(io.StringIO(r.content.decode("utf-8-sig"))))
     assert rows[0] == ["Section", "Question", "Answer"]
     assert all(len(row) in (0, 3) for row in rows), "a row broke the column count"
 
@@ -615,14 +620,73 @@ def test_csv_keeps_answers_whose_question_has_been_removed(coach, anon):
 
 
 def test_csv_filename_is_safe(coach, anon):
-    """A name with quotes or slashes must not break the header or the filesystem."""
+    """
+    A name with quotes or slashes must not break the header or the filesystem.
+
+    The header now carries two parameters — a plain-ASCII `filename` and an
+    RFC 5987 `filename*` holding the real name percent-encoded — so it is parsed
+    properly here rather than split on the string "filename=", which matches
+    both and previously made this assert against the wrong half.
+    """
+    import re
+
     intake_id = submitted_intake(coach, anon, {
         **VALID_ANSWERS, "full_name": 'Ravi "Bull" Kumar/../etc',
     })
     disposition = coach.get(f"/api/intakes/{intake_id}/csv").headers["content-disposition"]
-    assert '"' not in disposition.split("filename=")[1].strip('"')
-    assert "/" not in disposition.split("filename=")[1]
-    assert ".." not in disposition
+
+    ascii_name = re.search(r'filename="([^"]*)"', disposition).group(1)
+    encoded = re.search(r"filename\*=UTF-8''(\S+)", disposition).group(1)
+
+    # The quoted ASCII name carries nothing that could break out of the header
+    # or escape a directory.
+    for bad in ('"', "/", "\\", "..", ";", "\n"):
+        assert bad not in ascii_name, f"{bad!r} survived into the filename"
+    # And the encoded parameter is percent-encoded, so a slash cannot survive raw.
+    assert "/" not in encoded and ".." not in encoded
+
+
+def test_csv_export_handles_a_name_in_any_script(coach, anon):
+    """
+    A regression, and one that fired on exactly the clients this is launching to.
+
+    `isalnum()` is True for Devanagari, Tamil and CJK letters, so a name in one
+    of those scripts passed the old filter and landed raw in a Content-Disposition
+    header — which Starlette encodes as latin-1, so the coach got a bare
+    "Internal Server Error". The intake field literally invites it: "as you'd
+    like me to write it on your plan".
+    """
+    for name in ("प्रिया शर्मा", "张伟", "ரவி", "José Álvarez", "Ravi Kumar"):
+        intake_id = submitted_intake(coach, anon, {**VALID_ANSWERS, "full_name": name})
+        r = coach.get(f"/api/intakes/{intake_id}/csv")
+        assert r.status_code == 200, f"{name} broke the export"
+        assert "filename*=UTF-8''" in r.headers["content-disposition"]
+
+
+def test_csv_does_not_let_an_answer_run_as_a_spreadsheet_formula(coach, anon):
+    """
+    Excel and Sheets evaluate any cell starting with = + - or @.
+
+    The realistic harm is silence, not attack: "-5 kg last year" in an injury
+    history and "@priya_fit" as a contact both display as #NAME? in the file
+    handed to a dietitian, and the clinical section is where that lands.
+    """
+    intake_id = submitted_intake(coach, anon, {
+        **VALID_ANSWERS,
+        "injuries": "-5 kg last year, knee",
+        "supplements": "+1 whey scoop",
+        "contact": "@priya_fit",
+        "anything_else": "=HYPERLINK(\"http://evil\",\"click\")",
+    })
+    body = coach.get(f"/api/intakes/{intake_id}/csv").content.decode("utf-8-sig")
+
+    for line in body.split("\n"):
+        for cell in line.split(","):
+            bare = cell.strip().strip('"')
+            assert not bare[:1] in ("=", "+", "-", "@"), \
+                f"this cell will be evaluated by a spreadsheet: {cell!r}"
+    # And the client's words are still there, just neutralised.
+    assert "5 kg last year" in body and "priya_fit" in body
 
 
 def test_csv_export_of_a_missing_submission_is_404(coach):
