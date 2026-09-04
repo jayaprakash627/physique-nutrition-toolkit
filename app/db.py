@@ -663,6 +663,10 @@ def delete_invite(invite_id: int) -> bool:
 #  Submitted intakes
 # ---------------------------------------------------------------------------
 
+class InviteAlreadyUsed(Exception):
+    """Raised when a link was burned by another request while this one was in flight."""
+
+
 def create_intake(*, invite_id: int, answers: dict, consent_version: str) -> dict:
     """
     Store a submission and burn the invite in the same transaction.
@@ -670,6 +674,19 @@ def create_intake(*, invite_id: int, answers: dict, consent_version: str) -> dic
     Both happen on one connection so a link can't be marked used while its
     answers fail to save, or vice versa — the client would either lose their work
     or be able to submit twice.
+
+    The UPDATE carries its own `submitted_at IS NULL` guard, and that guard is
+    the single-use guarantee — not the check the route did before calling here.
+    The route reads the invite's state on one connection and this runs on a later
+    one, so two overlapping requests both saw "ok" and both committed: a
+    double-tapped submit button, a retry on a flaky mobile connection, or the
+    link opened on two devices was enough. Because the route is a sync def,
+    uvicorn runs it in a threadpool and those requests genuinely interleave.
+
+    Making the burn conditional moves the decision into the database, where it is
+    atomic: whichever request updates the row first wins, the loser sees
+    rowcount 0 and raises, and raising inside the `with` block rolls its INSERT
+    back rather than leaving an orphaned submission attached to a used link.
     """
     now = _now()
     with db() as c:
@@ -681,7 +698,12 @@ def create_intake(*, invite_id: int, answers: dict, consent_version: str) -> dic
              (answers.get("contact") or "").strip() or None,
              json.dumps(answers)),
         )
-        c.run("UPDATE invites SET submitted_at = ? WHERE id = ?", (now, invite_id))
+        burned = c.run(
+            "UPDATE invites SET submitted_at = ? WHERE id = ? AND submitted_at IS NULL",
+            (now, invite_id),
+        )
+        if burned == 0:
+            raise InviteAlreadyUsed(invite_id)
     return {"id": new_id, "created_at": now}
 
 

@@ -393,11 +393,18 @@ def submit_intake(token: str, payload: IntakeIn):
             "Please fill in: " + ", ".join(labels.get(k, k) for k in missing),
         )
 
-    db.create_intake(
-        invite_id=invite["id"],
-        answers=answers,
-        consent_version=intake.CONSENT_VERSION,
-    )
+    try:
+        db.create_intake(
+            invite_id=invite["id"],
+            answers=answers,
+            consent_version=intake.CONSENT_VERSION,
+        )
+    except db.InviteAlreadyUsed:
+        # Another request burned the link between the state check above and the
+        # write. Same answer the client would have got a moment earlier, so they
+        # see one consistent message rather than a 500 from a race they cannot
+        # perceive.
+        raise HTTPException(410, INVITE_STATE_MESSAGES["used"])
 
     # What the client sees immediately: proof their answers were read, and the
     # reason to have the conversation. Deliberately no calorie or macro numbers —

@@ -638,3 +638,84 @@ def test_label_for_answer_maps_options_and_keeps_units():
     assert intake.label_for_answer(fields["work_type"], None) == ""
     assert intake.label_for_answer(fields["work_type"], "") == ""
     assert intake.label_for_answer(fields["work_type"], "not_an_option") == "not_an_option"
+
+
+# ===========================================================================
+#  REGRESSIONS — both of these were live bugs, found by an adversarial sweep
+# ===========================================================================
+
+def test_rotating_the_password_kills_every_existing_session(coach, monkeypatch):
+    """
+    The documented response to a suspected leak has to actually revoke.
+
+    README tells a coach that rotating COACH_PASSWORD and restarting kills every
+    live session. That was true while sessions lived in a module-level dict, and
+    silently stopped being true when they moved into the database so they would
+    survive the host's 15-minute sleep — rows outlived the restart and nothing
+    tied a row to the password it was issued under. A stolen cookie kept full
+    read, write and delete access for the rest of its 12-hour life while the
+    coach watched the old password get rejected and believed they were safe.
+    """
+    assert coach.get("/api/clients").status_code == 200
+
+    monkeypatch.setenv("COACH_PASSWORD", "a-completely-different-password-9x2")
+
+    assert coach.get("/api/clients").status_code == 401, \
+        "a session issued under the old password still reads client data"
+    assert coach.post("/api/clients", json={
+        "name": "Attacker", "sex": "male", "age": 30, "height_cm": 170,
+    }).status_code == 401, "the old session can still write"
+    assert coach.get("/api/session").json()["logged_in"] is False
+
+
+def test_the_session_fingerprint_changes_with_the_password(monkeypatch):
+    """The mechanism behind the test above, asserted directly."""
+    monkeypatch.setenv("COACH_PASSWORD", "password-one")
+    first = security._fingerprint("a-fixed-token")
+    monkeypatch.setenv("COACH_PASSWORD", "password-two")
+    second = security._fingerprint("a-fixed-token")
+    assert first != second
+
+
+def test_two_simultaneous_submissions_cannot_both_use_one_link(coach):
+    """
+    Single use has to hold under a race, not just in sequence.
+
+    The route read the invite's state on one connection and wrote on a later one,
+    and the burn carried no guard — so two overlapping requests both saw "ok" and
+    both committed. A double-tapped submit button, a retry on a flaky mobile
+    connection, or the link opened on two devices was enough, and because the
+    route is a sync def uvicorn genuinely interleaves them in its threadpool.
+    """
+    import threading
+
+    token = coach.post("/api/invites", json={"label": "race"}).json()["token"]
+    answers = {
+        "full_name": "Racer", "contact": "r@example.com", "age": 30,
+        "sex": "male", "height_cm": 175, "weight_kg": 80,
+        "goal": "cut", "diet": "omnivore",
+    }
+
+    results: list[int] = []
+    barrier = threading.Barrier(2)
+
+    def submit(n: int) -> None:
+        client = TestClient(app)
+        barrier.wait()                      # fire both at the same instant
+        results.append(client.post(
+            f"/api/intake/{token}",
+            json={"answers": {**answers, "full_name": f"Racer{n}"}, "consent": True},
+        ).status_code)
+
+    threads = [threading.Thread(target=submit, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert sorted(results) == [200, 410], f"both submissions were accepted: {results}"
+
+    # And the loser's answers must not be left behind attached to a used link.
+    stored = [i for i in coach.get("/api/intakes").json()["intakes"]
+              if (i.get("full_name") or "").startswith("Racer")]
+    assert len(stored) == 1, f"{len(stored)} submissions stored for a single-use link"

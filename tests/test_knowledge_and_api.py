@@ -47,6 +47,29 @@ client = TestClient(app)
 assert client.post("/api/login", json={"password": TEST_PASSWORD}).status_code == 200
 
 
+@pytest.fixture(autouse=True)
+def _keep_the_coach_logged_in():
+    """
+    Make `client`'s session valid at RUN time, not just at import time.
+
+    A session is bound to the password that issued it, so that a rotation revokes
+    it — which means the login above, performed during collection, is dead by the
+    time these tests run: every module in this suite sets COACH_PASSWORD while
+    being collected, and the one collected last owns it. That is the same hazard
+    the comment at the top of this file describes, and the same fix the recovery
+    tests already use: ask the app which password is currently in force rather
+    than assuming it is this file's.
+
+    Without this, adding a test module whose name sorts after this one silently
+    turns every coach test here into a 401.
+    """
+    if not client.get("/api/session").json()["logged_in"]:
+        security._attempts.clear()          # another test may have tripped the lockout
+        assert client.post(
+            "/api/login", json={"password": security.coach_password()},
+        ).status_code == 200
+
+
 # ===========================================================================
 #  KNOWLEDGE INTEGRITY
 # ===========================================================================

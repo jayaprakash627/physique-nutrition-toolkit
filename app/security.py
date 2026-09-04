@@ -13,7 +13,10 @@ setup instructions instead of being open. A missing config must never mean "no
 lock on the door" — that's how the original version would have leaked.
 
 **Server-side sessions, not signed cookies.** Token → expiry, held in the
-database. No JWT to get wrong, and revoking every session is one DELETE.
+database. No JWT to get wrong. Each row is bound to the password that issued it,
+so rotating COACH_PASSWORD revokes every live session by itself — see
+`_fingerprint` for why that is structural rather than a step someone has to
+remember.
 
 These used to live in a module-level dict, and the docstring here argued that
 losing them on restart was a feature: no long-lived credential floating around.
@@ -81,15 +84,36 @@ def is_configured() -> bool:
 
 def _fingerprint(token: str) -> str:
     """
-    What gets stored instead of the token.
+    What gets stored instead of the token — bound to the password that issued it.
 
     Plain SHA-256 with no salt or stretching, deliberately. Those defend against
     guessing a low-entropy secret; this token is 32 bytes from `secrets`, so
     there is nothing to guess and a slow hash would only add latency to every
     authenticated request. The job here is narrow: make the stored row useless if
     someone reads the table.
+
+    The password is mixed in for a reason that cost us a real hole. When sessions
+    lived in a module-level dict, restarting the process destroyed them, so
+    "rotate COACH_PASSWORD and restart" genuinely was a full revocation — which is
+    what the README tells a coach to do when they suspect a cookie has been
+    stolen. Moving sessions into the database so they'd survive the host's
+    15-minute sleep quietly deleted that property: rows outlived the restart, and
+    nothing tied a row to the password it was issued under. A stolen cookie kept
+    full read, write and delete access to every client record for the rest of its
+    12-hour life, while the coach watched the old password get rejected and
+    believed they were safe.
+
+    Folding the password hash in makes rotation revoke, structurally. Change the
+    password and every previously issued fingerprint stops matching, so the rows
+    are dead on the next request — no startup sweep to remember, no endpoint to
+    call, nothing to get wrong. Deploying this change logs the coach out once,
+    which is the correct behaviour for a fix of exactly this kind.
     """
-    return hashlib.sha256(token.encode()).hexdigest()
+    # A missing password means coach mode is refused entirely (see require_coach),
+    # so this branch never authenticates anyone — it only avoids a TypeError.
+    secret = coach_password() or ""
+    pw_hash = hashlib.sha256(secret.encode()).hexdigest()
+    return hashlib.sha256(f"{token}:{pw_hash}".encode()).hexdigest()
 
 
 def create_session() -> tuple[str, int]:
