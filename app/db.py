@@ -21,13 +21,14 @@ Postgres before trusting a release:
 
     DATABASE_URL="postgresql://..." .venv/bin/python -m pytest
 
-Six tables:
+Seven tables:
     clients       one row per person the coach tracks
     measurements  many rows per client, one per weigh-in — this is the time series
     reports       saved assessment snapshots, stored as JSON
     invites       one-time onboarding links, each with an unguessable token
     intakes       submitted onboarding questionnaires, stored as JSON
     sessions      coach logins, stored as a hash of the token — see security.py
+    prices        the coach's grocery prices, where they differ from the defaults
 
 `reports` stores the whole response as a JSON blob rather than normalising it
 into columns. That's deliberate: the report shape includes long-form explanation
@@ -163,6 +164,16 @@ SCHEMA: tuple[str, ...] = (
       created_at TEXT,
       expires_at TEXT
     )""",
+    # The coach's own grocery prices, overriding the defaults in costing.py.
+    # Only the ones they actually changed are stored, so a default that gets
+    # updated in a later release still reaches every coach who never touched it —
+    # copying all 45 rows in at first use would freeze them forever.
+    f"""
+    CREATE TABLE IF NOT EXISTS prices (
+      food_key   TEXT PRIMARY KEY,
+      price      {_REAL},
+      updated_at TEXT
+    )""",
     # The measurements query is always "everything for one client, in date order",
     # so index exactly that.
     "CREATE INDEX IF NOT EXISTS idx_measurements_client ON measurements(client_id, taken_on)",
@@ -175,7 +186,7 @@ SCHEMA: tuple[str, ...] = (
 # checking one table, so adding a table to SCHEMA above is enough to have it
 # created on databases that already exist.
 EXPECTED_TABLES = {"clients", "measurements", "reports", "invites", "intakes",
-                   "sessions"}
+                   "sessions", "prices"}
 
 MEASUREMENT_COLS = [
     "taken_on", "weight_kg", "bodyfat_pct", "waist_cm", "neck_cm",
@@ -782,3 +793,37 @@ def session_prune() -> None:
     """Drop expired rows. Called on login, not on every request — it's housekeeping."""
     with db() as c:
         c.run("DELETE FROM sessions WHERE expires_at <= ?", (_now(),))
+
+
+# ---------------------------------------------------------------------------
+#  Grocery prices
+# ---------------------------------------------------------------------------
+
+def prices_get() -> dict[str, float]:
+    """The coach's overrides only. Defaults live in costing.py and are merged there."""
+    with db() as c:
+        return {r["food_key"]: r["price"] for r in c.query("SELECT food_key, price FROM prices")}
+
+
+def prices_set(food_key: str, price: float) -> None:
+    """
+    Save one price.
+
+    Written as delete-then-insert rather than an UPSERT because the two backends
+    spell that differently (ON CONFLICT vs INSERT OR REPLACE), and this table is
+    written once in a while by one coach — the simplicity is worth more than the
+    round trip. Both statements share a transaction, so a price is never lost
+    between them.
+    """
+    with db() as c:
+        c.run("DELETE FROM prices WHERE food_key = ?", (food_key,))
+        c.run("INSERT INTO prices (food_key, price, updated_at) VALUES (?, ?, ?)",
+              (food_key, float(price), _now()))
+
+
+def prices_reset(food_key: str | None = None) -> int:
+    """Drop one override, or all of them, falling back to the shipped defaults."""
+    with db() as c:
+        if food_key is None:
+            return c.run("DELETE FROM prices")
+        return c.run("DELETE FROM prices WHERE food_key = ?", (food_key,))

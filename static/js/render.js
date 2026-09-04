@@ -1546,6 +1546,8 @@ Object.assign(Render, {
         ${excluded}
         ${meals}
 
+        ${r.cost ? Render.dietCost(r.cost) : ''}
+
         <div class="card__head" style="margin-top:var(--sp-6)"><h3>Did it land?</h3></div>
         <div class="table-wrap">
           <table>
@@ -1559,6 +1561,109 @@ Object.assign(Render, {
         ${notes}
         <div class="note">${esc(day.note)}</div>
         ${r.sources ? Render.cites(r.sources) : ''}
+      </div>`;
+  },
+
+  /**
+   * What the day costs to buy.
+   *
+   * Leads with the monthly figure because that is the number a client answers
+   * yes or no to — nobody budgets in rupees per day. The eat-vs-buy column is
+   * kept visible rather than folded into the price: a coach who sees "eat 225 g,
+   * buy 315 g" understands the number and can check it, and one who is shown
+   * only a total has to take it on trust.
+   */
+  dietCost(c) {
+    const rows = c.items.map(i => `
+      <tr>
+        <td>
+          <span class="food-row__name">${esc(i.name)}</span>
+          <span class="food-row__portion">eat ${i.eat_grams} g${
+            i.raw_factor !== 1 ? ` · ${esc(i.why_raw || 'raw weight differs')}` : ''}</span>
+        </td>
+        <td class="num strong">${esc(i.buy)}</td>
+        <td class="num">₹${i.unit_price} <span class="small muted">${esc(i.unit_label)}</span></td>
+        <td class="num strong">₹${i.cost.toFixed(2)}</td>
+      </tr>`).join('');
+
+    const biggest = c.biggest ? `
+      <div class="note">
+        <strong>${esc(c.biggest.name)} is ${c.biggest_share_pct}% of the bill
+        (₹${c.biggest.cost.toFixed(2)} a day).</strong>
+        If this needs to come down, that's the line to change — swapping it for a
+        cheaper protein in the same row of the food list moves the total far more
+        than trimming everything else.
+      </div>` : '';
+
+    return `
+      <div class="card__head" style="margin-top:var(--sp-6)">
+        <h3>What this costs to buy</h3>
+      </div>
+      <div class="cost-heads">
+        <div class="cost-head">
+          <span class="cost-head__label">A month</span>
+          <span class="cost-head__value">₹${Math.round(c.per_month).toLocaleString('en-IN')}</span>
+        </div>
+        <div class="cost-head">
+          <span class="cost-head__label">A week</span>
+          <span class="cost-head__value">₹${Math.round(c.per_week).toLocaleString('en-IN')}</span>
+        </div>
+        <div class="cost-head">
+          <span class="cost-head__label">A day</span>
+          <span class="cost-head__value">₹${c.per_day.toFixed(0)}</span>
+        </div>
+      </div>
+      ${biggest}
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Food</th><th class="num">Buy</th><th class="num">Price</th><th class="num">Cost</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${c.unpriced.length ? `<div class="note"><strong>Not priced:</strong>
+        ${c.unpriced.map(esc).join(', ')} — add a price for these to include them.</div>` : ''}
+      <div class="note">
+        ${esc(c.note)} Defaults last checked ${esc(c.prices_as_of)}; set your own
+        under <strong>Grocery prices</strong>.
+      </div>`;
+  },
+
+  /** The editable price list. */
+  priceList(rows, asOf) {
+    const body = rows.map(p => `
+      <tr>
+        <td>
+          <span class="food-row__name">${esc(p.name)}</span>
+          <span class="food-row__portion">${esc(p.unit_label)}</span>
+        </td>
+        <td class="num">
+          <input class="price-input" type="number" min="0.5" max="100000" step="0.5"
+                 value="${p.price}" data-price-key="${esc(p.key)}"
+                 aria-label="Price for ${esc(p.name)}" />
+        </td>
+        <td class="num">
+          ${p.is_yours
+            ? `<button class="btn btn--ghost btn--sm" data-reset-price="${esc(p.key)}"
+                       title="Back to the shipped default of ₹${p.default_price}">yours ·
+                 reset</button>`
+            : `<span class="small muted">default</span>`}
+        </td>
+      </tr>`).join('');
+
+    return `
+      <p class="q__hint">
+        Change a price and every diet you build afterwards uses it. Only what you
+        change is stored, so defaults that get updated later still reach you.
+        Shipped prices were last checked ${esc(asOf)} and are ordinary Indian
+        retail — they will be wrong for your city.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Food</th><th class="num">Price ₹</th><th class="num"></th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
       </div>`;
   },
 });

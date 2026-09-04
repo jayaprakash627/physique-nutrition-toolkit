@@ -79,6 +79,11 @@ const API = {
   mealPlan:           (p)  => API.call('/api/meal-plan', { method: 'POST', body: p }),
   mealPlanFromIntake: (id) => API.call(`/api/intakes/${id}/meal-plan`, { method: 'POST' }),
 
+  // Grocery prices — coach only
+  prices:     ()          => API.call('/api/prices'),
+  setPrice:   (key, price) => API.call(`/api/prices/${key}`, { method: 'PUT', body: { price } }),
+  resetPrice: (key)        => API.call(`/api/prices/${key}`, { method: 'DELETE' }),
+
   clients:       ()            => API.call('/api/clients'),
   createClient:  (p)           => API.call('/api/clients', { method: 'POST', body: p }),
   client:        (id)          => API.call(`/api/clients/${id}`),

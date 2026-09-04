@@ -424,7 +424,7 @@ async function refreshCoachState() {
   }
 
   work.hidden = false;
-  await Promise.all([loadClients(), loadInvites(), loadIntakes()]);
+  await Promise.all([loadClients(), loadInvites(), loadIntakes(), loadPrices()]);
 }
 
 function showLoginError(msg) {
@@ -804,6 +804,50 @@ function showDietPlan(plan) {
   box.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+/**
+ * The coach's own grocery prices.
+ *
+ * Loaded once when the workspace opens, then saved on change. A price is saved
+ * on blur rather than per keystroke — typing "280" would otherwise save 2, then
+ * 28, then 280, and the middle two are wrong.
+ */
+async function loadPrices() {
+  const box = document.getElementById('priceList');
+  try {
+    const { prices, defaults_as_of } = await API.prices();
+    box.innerHTML = Render.priceList(prices, defaults_as_of);
+  } catch (err) {
+    box.innerHTML = `<p class="muted small">Couldn't load prices: ${esc(err.message)}</p>`;
+  }
+}
+
+function wirePrices() {
+  const box = document.getElementById('priceList');
+
+  box.addEventListener('change', async e => {
+    const input = e.target.closest('[data-price-key]');
+    if (!input) return;
+    const value = Number(input.value);
+    if (!(value > 0)) { toast('A price has to be more than zero', true); return; }
+    try {
+      await API.setPrice(input.dataset.priceKey, value);
+      toast('Price saved — new diets will use it');
+      await loadPrices();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  box.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-reset-price]');
+    if (!btn) return;
+    try {
+      await API.resetPrice(btn.dataset.resetPrice);
+      toast('Back to the default price');
+      await loadPrices();
+    } catch (err) { toast(err.message, true); }
+  });
+}
+
+
 async function runDietBuilder(e) {
   e.preventDefault();
   const btn = e.target.querySelector('button[type="submit"]');
@@ -858,6 +902,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('logoutBtn').addEventListener('click', doLogout);
   document.getElementById('inviteForm').addEventListener('submit', createInvite);
   document.getElementById('dietForm').addEventListener('submit', runDietBuilder);
+  wirePrices();
   initClientEvents();
 
   // Buttons that live inside re-rendered markup, handled by delegation.

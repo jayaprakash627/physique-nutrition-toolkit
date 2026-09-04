@@ -99,3 +99,59 @@ def test_the_builder_is_refused_to_anyone_not_logged_in(page):
       return r.status;
     }""")
     assert status in (401, 503), f"meal plan reachable without a session: {status}"
+
+
+# ===========================================================================
+#  GROCERY COST
+# ===========================================================================
+
+def test_the_plan_shows_what_it_costs_to_buy(coach):
+    box = _build(coach, d_weight="75", d_height="175")
+    heads = box.locator(".cost-head")
+    assert heads.count() == 3, "expected month, week and day figures"
+
+    text = box.inner_text()
+    assert "₹" in text
+    # The shopping quantities, not the eaten weight — meat is heavier raw.
+    assert "buy" in text.lower() or "Buy" in text
+
+
+def test_the_cost_table_separates_what_you_eat_from_what_you_buy(coach):
+    """
+    The conversion that would otherwise be silently wrong.
+
+    150 g of cooked chicken is ~210 g raw; 150 g of cooked rice is ~57 g raw.
+    Both numbers have to be visible, or a coach cannot check the total.
+    """
+    box = _build(coach, d_weight="75", d_height="175")
+    rows = box.inner_text().lower()
+    assert "eat" in rows, "the eaten weight is not shown"
+    # And at least one raw-weight explanation is surfaced.
+    assert "raw" in rows or "cooked" in rows
+
+
+def test_changing_a_price_changes_what_the_plan_costs(coach):
+    """The whole point of an editable price list."""
+    box = _build(coach, d_weight="75", d_height="175")
+    before = box.locator(".cost-head__value").first.inner_text()
+
+    open_tool(coach, "pricesTool")
+    coach.wait_for_selector('[data-price-key="chicken_breast"]', timeout=10_000)
+    field = coach.locator('[data-price-key="chicken_breast"]')
+    field.fill("500")
+    field.dispatch_event("change")
+    coach.wait_for_selector('[data-reset-price="chicken_breast"]', timeout=10_000)
+
+    box = _build(coach, d_weight="75", d_height="175")
+    after = box.locator(".cost-head__value").first.inner_text()
+    assert after != before, f"monthly cost did not move: {before} -> {after}"
+
+    # Put it back, and confirm the reset really restores the shipped default.
+    coach.click('[data-reset-price="chicken_breast"]')
+    coach.wait_for_timeout(1000)
+    assert coach.locator('[data-price-key="chicken_breast"]').input_value() == "280"
+
+
+def test_the_price_list_is_coach_only(page):
+    status = page.evaluate("""async () => (await fetch('/api/prices')).status""")
+    assert status in (401, 503), f"grocery prices reachable without a session: {status}"

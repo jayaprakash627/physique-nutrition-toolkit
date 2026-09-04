@@ -403,21 +403,68 @@ pip install -r requirements-dev.txt && pytest -q
 The suite sets its own `COACH_PASSWORD` and a temp database, so it needs no setup
 and never touches your real data.
 
-299 tests covering every formula against its published value, the safety
+330 tests covering every formula against its published value, the safety
 guardrails, knowledge-base integrity (every citation resolves, every nutrient is
 complete), the plain-language summary for every goal — including a check that no
 internal enum like `aggressive_cut` reaches text a person reads — the API
 contract, and the security boundary.
 
+### What it costs to buy
+
+Coach mode only, and it sits under the diet it prices. A plan that hits the
+macros perfectly is still abandoned in week three if it costs more than the
+client budgets for food, so the cost travels with the plan rather than hiding
+behind another button.
+
+```
+A MONTH ₹4,482      A WEEK ₹1,049      A DAY ₹146
+
+Chicken breast   eat 225 g · cooked chicken has lost ~30% water    buy 315 g   ₹280/kg   ₹88.20
+Whole eggs       eat 225 g                                         buy 4 eggs  ₹7 each   ₹28.00
+Chana            eat 375 g · dry chana absorbs water when boiled   buy 158 g   ₹100/kg   ₹15.80
+Rice             eat 450 g · rice ~2.5× its weight when cooked     buy 171 g   ₹60/kg    ₹10.26
+
+Chicken breast is 57% of the bill (₹88.20 a day).
+```
+
+Two things make this less trivial than it looks, and both would produce numbers
+that are wrong without looking wrong.
+
+**You don't buy food in the units the plan is written in.** Nutrition is
+calculated in grams; nobody buys eggs in grams, or milk and oil in anything but
+litres. Every food carries the unit it is actually sold in — kg, litre or piece —
+and the conversion happens in `costing.py` rather than in the coach's head.
+
+**The plan is COOKED weight. You buy RAW.** This is the one that matters, and it
+goes both ways. 150 g of cooked chicken started as ~210 g raw, because meat loses
+water — cost the cooked weight and you are 40% under. 150 g of cooked rice was
+only ~57 g of raw rice, because grains absorb it — cost that as 150 g and you are
+nearly 3× over. Dal is worse. Every food therefore carries a `raw_factor` with
+the reason written beside it, and both weights stay on screen so the coach can
+check the number rather than trust it.
+
+A week is priced as a week's shopping, not as one day multiplied by seven. Whole
+units have to round: 4.5 eggs a day becomes 4, and seven of those is 28 — but the
+week genuinely needs 32. Multiplying a rounded day understated this plan by ~3%,
+always in the same direction, so each horizon is computed at its own scale.
+
+Prices are ordinary Indian retail and **will be wrong for your city and month**.
+They exist so the feature works out of the box, not because they are
+authoritative. Every one is editable under **Grocery prices**, only what you
+change is stored — so a default corrected in a later release still reaches you —
+and the output always says when the shipped prices were last checked. A cost
+estimate that hides its assumptions is worse than none, because it gets quoted to
+a client.
+
 ### Browser tests
 
 ```bash
 playwright install chromium     # one-off
-pytest -m e2e                   # 19 tests, a real browser, a real server
+pytest -m e2e                   # 23 tests, a real browser, a real server
 pytest -m e2e --headed          # watch them happen
 ```
 
-Kept out of the default run on purpose: `pytest` alone stays at 299 tests needing
+Kept out of the default run on purpose: `pytest` alone stays at 330 tests needing
 nothing but Python and a temp file, so a fresh clone is one command from green.
 The browser suite boots the app on a free port with its own throwaway database —
 it cannot touch real data, and it forces `DATABASE_URL` empty so running it with
@@ -462,7 +509,7 @@ removed.
 | Auth | stdlib `secrets` | Server-side sessions, constant-time compare, rate-limited login — no dependency |
 | Frontend | Plain HTML/CSS/JS | No framework, no build step — clone and run |
 | Charts | Hand-rolled Canvas | ~250 lines, DPR-aware, theme-reactive; no chart library |
-| Tests | pytest + Playwright | 299 fast tests (no network, nothing beyond a temp DB) + 19 opt-in browser tests |
+| Tests | pytest + Playwright | 330 fast tests (no network, nothing beyond a temp DB) + 23 opt-in browser tests |
 
 ### Layout
 
@@ -477,6 +524,7 @@ app/
 ├── security.py     coach auth: sessions, rate limiting, hardening
 ├── intake.py       the onboarding questionnaire + personalised priorities
 ├── planner.py      the diet builder: the shown working, then a day of food
+├── costing.py      what a day costs to buy — units, raw vs cooked, prices
 ├── db.py           storage: clients, measurements, reports, invites, intakes,
 │                   sessions. Postgres when DATABASE_URL is set, SQLite when not
 └── knowledge/      ← the nutrition content, deliberately separated
@@ -735,6 +783,9 @@ clearly marked as not recommended, with the flags leading.
 | `POST` | `/api/intakes/{id}/convert` | Turn it into a tracked client |
 | `POST` | `/api/intakes/{id}/meal-plan` | **Build a diet from their answers** |
 | `POST` | `/api/meal-plan` | **Build a diet from typed-in numbers** |
+| `GET` | `/api/prices` | Grocery prices — yours and the defaults |
+| `PUT` | `/api/prices/{food}` | Set what a food costs you |
+| `DELETE` | `/api/prices/{food}` | Back to the shipped default |
 | `DELETE` | `/api/intakes/{id}` | Hard delete (right to erasure) |
 | `GET` `POST` | `/api/clients` | List / create clients |
 | `GET` `PUT` `DELETE` | `/api/clients/{id}` | Detail, update, delete (cascades) |

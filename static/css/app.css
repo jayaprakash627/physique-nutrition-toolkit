@@ -1484,3 +1484,36 @@ canvas { display: block; width: 100%; height: auto; }
 
 .mp-options { margin: var(--sp-2) 0 0 var(--sp-4); display: grid; gap: var(--sp-2); }
 .mp-options li { list-style: disc; font-size: 0.86rem; }
+
+/* ------------------------- Grocery cost --------------------------------- */
+.cost-heads {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-3); margin: var(--sp-4) 0;
+}
+.cost-head {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: var(--sp-4); text-align: center;
+}
+.cost-head__label {
+  display: block; font-size: var(--fs-xs); text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: var(--sp-2);
+}
+/* The monthly figure is the one a client says yes or no to, so it leads —
+   nobody budgets food in rupees per day. */
+.cost-head:first-child .cost-head__value { color: var(--accent); }
+.cost-head__value {
+  display: block; font-family: var(--font-mono);
+  font-size: 1.25rem; font-weight: 600; color: var(--text);
+}
+@media (max-width: 560px) {
+  .cost-heads { grid-template-columns: 1fr; }
+}
+
+.price-input {
+  width: 6.5rem; text-align: right;
+  font-family: var(--font-mono); font-size: var(--fs-sm);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text);
+}
+.price-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }

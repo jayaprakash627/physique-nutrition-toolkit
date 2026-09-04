@@ -23,8 +23,9 @@ Flow of `assess()`:
 
 from __future__ import annotations
 
+from . import db
 from . import formulas as f
-from . import planner, safety
+from . import costing, planner, safety
 from .knowledge import explanations as ex
 from .knowledge import foods, micronutrients, sources
 
@@ -990,11 +991,18 @@ def meal_plan_report(inp: dict, *, budget: str = "moderate",
         goal=macro_goal,
     )
 
+    # Prices are the coach's own where they've set them, defaults elsewhere. A
+    # plan that can't be afforded is abandoned in week three no matter how good
+    # the macros are, so the cost travels with the plan rather than sitting
+    # behind another button.
+    cost = costing.cost_day(built["day"], db.prices_get())
+
     return {
         "input": {
             "weight_kg": inp["weight_kg"], "diet": inp.get("diet", "omnivore"),
             "meals": inp.get("meals", 4), "goal": macro_goal, "budget": budget,
         },
+        "cost": cost,
         "bodyfat_pct": bf["chosen"]["value"],
         "bodyfat_method": bf["chosen"]["method"],
         "lean_mass_kg": lbm,

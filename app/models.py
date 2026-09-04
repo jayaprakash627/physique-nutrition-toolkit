@@ -270,3 +270,17 @@ class MealPlanIn(AssessmentIn):
                           description="Free text from the intake — foods they won't eat")
     allergies: str = Field("", max_length=500,
                            description="Free text from the intake — allergies and intolerances")
+
+
+class PriceIn(BaseModel):
+    """
+    One grocery price, as the coach's shop actually charges.
+
+    Bounded rather than open: a price of zero would make a food look free and
+    quietly skew every total that includes it, and an absurd upper figure is
+    almost always a typo — a stray zero on ₹280 becomes ₹2,800 and the coach
+    quotes a client a monthly food budget four times too high.
+    """
+
+    price: float = Field(..., gt=0, le=100_000,
+                         description="Rupees per kg, per litre, or per piece")

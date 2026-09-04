@@ -33,7 +33,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db, engine, intake, security
+from . import costing, db, engine, intake, security
 from . import formulas as f
 from .knowledge import foods, micronutrients, sources
 from .models import (
@@ -45,6 +45,7 @@ from .models import (
     LoginIn,
     MealPlanIn,
     MeasurementIn,
+    PriceIn,
     PrepPlanIn,
     StrengthIn,
 )
@@ -673,6 +674,56 @@ def meal_plan_from_intake(intake_id: int):
         "assumed": assumed,
     }
     return report
+
+
+# ---------------------------------------------------------------------------
+#  COACH: grocery prices
+# ---------------------------------------------------------------------------
+
+@app.get("/api/prices", dependencies=[Depends(security.require_coach)])
+def list_prices():
+    """
+    Every food the planner can use, with the price in force and where it came from.
+
+    Returns defaults and overrides in one list, each row saying which it is, so
+    the coach can see at a glance what they have adjusted and what is still a
+    shipped guess that may be wrong for their city.
+    """
+    overrides = db.prices_get()
+    rows = []
+    for key, row in costing.PURCHASE.items():
+        food = foods.BY_KEY.get(key)
+        if not food:
+            continue
+        rows.append({
+            "key": key,
+            "name": food["name"],
+            "unit": row["unit"],
+            "unit_label": costing.UNIT_LABEL[row["unit"]],
+            "price": overrides.get(key, row["price"]),
+            "default_price": row["price"],
+            "is_yours": key in overrides,
+        })
+    rows.sort(key=lambda r: r["name"])
+    return {"prices": rows, "defaults_as_of": costing.PRICES_AS_OF}
+
+
+@app.put("/api/prices/{food_key}", dependencies=[Depends(security.require_coach)])
+def set_price(food_key: str, payload: PriceIn):
+    """Save what this food actually costs the coach."""
+    if food_key not in costing.PURCHASE:
+        raise HTTPException(404, f"No such food: {food_key}")
+    db.prices_set(food_key, payload.price)
+    return {"key": food_key, "price": payload.price, "is_yours": True}
+
+
+@app.delete("/api/prices/{food_key}", dependencies=[Depends(security.require_coach)])
+def reset_price(food_key: str):
+    """Drop an override and fall back to the shipped default."""
+    if food_key not in costing.PURCHASE:
+        raise HTTPException(404, f"No such food: {food_key}")
+    db.prices_reset(food_key)
+    return {"key": food_key, "price": costing.PURCHASE[food_key]["price"], "is_yours": False}
 
 
 @app.delete("/api/intakes/{intake_id}", dependencies=[Depends(security.require_coach)])
