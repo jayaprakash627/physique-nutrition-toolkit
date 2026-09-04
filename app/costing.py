@@ -172,7 +172,7 @@ def _quantity(food_key: str, grams: float, table: dict | None = None) -> dict | 
         "unit_label": UNIT_LABEL[row["unit"]],
         "raw_grams": round(raw_grams),
         # Eggs and bananas come in whole numbers; you cannot buy 2.4 eggs.
-        "units": round(units) if row["unit"] == PIECE else round(units, 3),
+        "units": __import__("math").ceil(units - 1e-9) if row["unit"] == PIECE else round(units, 3),
         "raw_factor": row["raw_factor"],
         "why_raw": row.get("why"),
     }

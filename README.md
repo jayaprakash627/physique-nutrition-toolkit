@@ -493,7 +493,7 @@ tells a vegan where to get B12.
 
 ```bash
 playwright install chromium     # one-off
-pytest -m e2e                   # 27 tests, a real browser, a real server
+pytest -m e2e                   # 39 tests, a real browser, a real server
 pytest -m e2e --headed          # watch them happen
 ```
 
@@ -502,6 +502,13 @@ nothing but Python and a temp file, so a fresh clone is one command from green.
 The browser suite boots the app on a free port with its own throwaway database —
 it cannot touch real data, and it forces `DATABASE_URL` empty so running it with
 a production URL exported can't write test clients into the live database.
+
+Coverage spans all four tabs, both front doors and a phone-sized viewport. The
+client onboarding form is walked end to end **in a fresh browser context with no
+cookies** — because that is what a client is — from the welcome screen through
+every section to the thank-you page, asserting on the way that the submit button
+stays dead until consent is given and that no calorie or macro figure ever
+reaches the client's screen.
 
 They cover what an API test structurally cannot: that the buttons are wired to
 the right handlers, that what the server returns actually renders, and that the
@@ -542,7 +549,7 @@ removed.
 | Auth | stdlib `secrets` | Server-side sessions, constant-time compare, rate-limited login — no dependency |
 | Frontend | Plain HTML/CSS/JS | No framework, no build step — clone and run |
 | Charts | Hand-rolled Canvas | ~250 lines, DPR-aware, theme-reactive; no chart library |
-| Tests | pytest + Playwright | 346 fast tests (no network, nothing beyond a temp DB) + 27 opt-in browser tests |
+| Tests | pytest + Playwright | 346 fast tests (no network, nothing beyond a temp DB) + 39 opt-in browser tests |
 
 ### Layout
 

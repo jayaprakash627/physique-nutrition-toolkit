@@ -156,3 +156,19 @@ def meal_text(box) -> str:
         box.locator(".mp-meal").nth(i).inner_text()
         for i in range(box.locator(".mp-meal").count())
     ).lower()
+
+
+def open_all_tools(page, panel_id: str) -> None:
+    """
+    Open every collapsed <details> inside a panel.
+
+    Both the Extra tools and Learn tabs put each tool behind a fold, and most of
+    them have no id — so there is nothing to target individually. Everything
+    inside a closed <details> is invisible to Playwright, which then times out on
+    an element that is present and perfectly correct; the failure reads like a
+    broken feature rather than a closed drawer.
+    """
+    page.evaluate(
+        f"document.querySelectorAll('#{panel_id} details')"
+        ".forEach(d => {{ d.open = true; }})".replace("{{", "{").replace("}}", "}")
+    )
