@@ -34,13 +34,21 @@ const API = {
       try {
         const err = await res.json();
         if (Array.isArray(err.detail)) {
-          // Pydantic validation errors — name the field so it's actionable.
+          // Pydantic validation errors. Two shapes arrive here and they want
+          // opposite treatment: a built-in complaint ("Input should be a valid
+          // number") is meaningless without knowing which field it's about,
+          // while a message written by one of our own validators is already a
+          // full explanation — and prefixing that with "fat_100g: Value error,"
+          // buries the sentence a coach actually needs to read behind an
+          // internal field name.
           msg = err.detail
             .map(d => {
+              const text = String(d.msg || '').replace(/^Value error,\s*/, '');
+              const written = text.length > 25 && /^[A-Z]/.test(text);
               const field = (d.loc || []).filter(l => l !== 'body').join('.');
-              return field ? `${field}: ${d.msg}` : d.msg;
+              return field && !written ? `${field}: ${text}` : text;
             })
-            .join('; ');
+            .join(' ');
         } else if (typeof err.detail === 'string') {
           msg = err.detail;
         }
@@ -78,6 +86,11 @@ const API = {
   // Diet builder — coach only
   mealPlan:           (p)  => API.call('/api/meal-plan', { method: 'POST', body: p }),
   mealPlanFromIntake: (id) => API.call(`/api/intakes/${id}/meal-plan`, { method: 'POST' }),
+
+  // The coach's own foods
+  customFoods:      ()    => API.call('/api/foods/custom'),
+  addCustomFood:    (p)   => API.call('/api/foods/custom', { method: 'POST', body: p }),
+  deleteCustomFood: (key) => API.call(`/api/foods/custom/${key}`, { method: 'DELETE' }),
 
   // Grocery prices — coach only
   prices:     ()          => API.call('/api/prices'),

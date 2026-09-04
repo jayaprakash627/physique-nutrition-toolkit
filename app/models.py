@@ -284,3 +284,108 @@ class PriceIn(BaseModel):
 
     price: float = Field(..., gt=0, le=100_000,
                          description="Rupees per kg, per litre, or per piece")
+
+
+# The diet category a coach picks, and the tags it becomes. Offered as one
+# choice rather than a free tag list because the tag vocabulary is an internal
+# detail — a coach should not have to know that "veg" and "vegan" are separate
+# flags for `foods.diet_ok` to filter correctly.
+FOOD_CATEGORY_TAGS = {
+    "meat_fish": ["nonveg"],
+    "egg":       ["egg"],
+    "dairy":     ["veg", "dairy"],
+    "plant":     ["veg", "vegan"],
+}
+
+
+class CustomFoodIn(BaseModel):
+    """
+    A food the coach adds themselves.
+
+    Macros are asked for **per 100 g**, because that is how every food label in
+    the country is written — a coach copying numbers off a packet should not have
+    to do arithmetic first. The portion is asked separately, and the per-portion
+    figures the planner needs are derived from the two.
+
+    The calorie figure is checked against the macros rather than trusted. Protein
+    and carbohydrate carry 4 kcal per gram and fat 9, so the three imply a
+    calorie total; if what was typed disagrees badly, something was mistyped, and
+    a wrong food silently poisons every plan it appears in and every grocery bill
+    derived from those plans. Catching it at the point of entry is the only place
+    it is cheap.
+    """
+
+    name: str = Field(..., min_length=2, max_length=60)
+    household: str = Field(..., min_length=2, max_length=60,
+                           description='How a client says it — "1 katori", "2 rotis"')
+    portion_grams: float = Field(..., gt=0, le=2000,
+                                 description="What one portion weighs, in grams")
+    category: Literal["meat_fish", "egg", "dairy", "plant"]
+
+    # Per 100 g, straight off the label.
+    kcal_100g: float = Field(..., ge=0, le=900)
+    protein_100g: float = Field(..., ge=0, le=100)
+    carb_100g: float = Field(..., ge=0, le=100)
+    fat_100g: float = Field(..., ge=0, le=100)
+    fibre_100g: float = Field(0, ge=0, le=100)
+
+    # How it is bought.
+    unit: Literal["kg", "litre", "piece"] = "kg"
+    price: float = Field(..., gt=0, le=100_000, description="Rupees per kg / litre / piece")
+    piece_grams: float | None = Field(None, gt=0, le=5000,
+                                      description="Weight of one piece, if sold by the piece")
+    raw_factor: float = Field(1.0, gt=0, le=5,
+                              description="Buy this much per gram eaten — >1 if it "
+                                          "loses weight cooking, <1 if it absorbs water")
+
+    @field_validator("carb_100g")
+    @classmethod
+    def _macros_fit_in_100g(cls, v: float, info) -> float:
+        """Protein plus carbohydrate plus fat cannot exceed the 100 g they are in."""
+        data = info.data
+        total = v + data.get("protein_100g", 0) + data.get("fat_100g", 0)
+        if total > 100:
+            raise ValueError(
+                f"Protein, carbs and fat come to {total:.0f} g, which is more than "
+                "the 100 g they're measured in. Check the label."
+            )
+        return v
+
+    @field_validator("fat_100g")
+    @classmethod
+    def _calories_match_the_macros(cls, v: float, info) -> float:
+        """
+        Reconcile the stated calories against 4/4/9.
+
+        Tolerance is wide on purpose. Labels round, fibre is counted differently
+        by different manufacturers, and sugar alcohols do not carry 4 kcal — so a
+        small disagreement is normal and rejecting it would be pedantic. A large
+        one is a typo: a stray zero, or grams typed into the calorie box.
+        """
+        data = info.data
+        stated = data.get("kcal_100g")
+        protein, carb = data.get("protein_100g"), data.get("carb_100g")
+        if stated is None or protein is None or carb is None:
+            return v                            # an earlier field already failed
+
+        implied = protein * 4 + carb * 4 + v * 9
+        if implied == 0 and stated == 0:
+            return v
+        if stated == 0 or abs(implied - stated) > max(30, stated * 0.25):
+            raise ValueError(
+                f"These don't add up: {protein:g} g protein + {carb:g} g carbs + "
+                f"{v:g} g fat works out to about {implied:.0f} kcal, but you typed "
+                f"{stated:g}. Protein and carbs are 4 kcal per gram, fat is 9. "
+                "One of the four numbers is probably mistyped."
+            )
+        return v
+
+    @field_validator("piece_grams")
+    @classmethod
+    def _pieces_need_a_weight(cls, v, info):
+        if info.data.get("unit") == "piece" and not v:
+            raise ValueError(
+                "Sold by the piece, so I need to know what one piece weighs — "
+                "otherwise there's no way to turn grams into a number to buy."
+            )
+        return v

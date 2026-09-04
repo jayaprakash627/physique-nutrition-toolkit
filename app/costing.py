@@ -155,14 +155,14 @@ def default_prices() -> dict[str, float]:
     return {key: row["price"] for key, row in PURCHASE.items()}
 
 
-def _quantity(food_key: str, grams: float) -> dict | None:
+def _quantity(food_key: str, grams: float, table: dict | None = None) -> dict | None:
     """
     Turn plan grams into something you can put in a basket.
 
     Returns the amount in purchase units, and the raw weight behind it, so the
     conversion is visible rather than folded silently into a price.
     """
-    row = PURCHASE.get(food_key)
+    row = (table or PURCHASE).get(food_key)
     if not row:
         return None
     raw_grams = grams * row["raw_factor"]
@@ -178,11 +178,12 @@ def _quantity(food_key: str, grams: float) -> dict | None:
     }
 
 
-def _display(food_key: str, q: dict) -> str:
+def _display(food_key: str, q: dict, book: dict | None = None) -> str:
     """How the quantity reads on a shopping list."""
     if q["unit"] == PIECE:
         n = max(1, int(q["units"]))
-        name = foods.BY_KEY[food_key]["name"].lower()
+        entry = (book or foods.BY_KEY).get(food_key) or {"name": ""}
+        name = entry["name"].lower()
         return f"{n} {'egg' if 'egg' in name else 'piece'}{'s' if n != 1 else ''}"
     grams = q["raw_grams"]
     if grams >= 1000:
@@ -190,31 +191,37 @@ def _display(food_key: str, q: dict) -> str:
     return f"{grams} {'ml' if q['unit'] == LITRE else 'g'}"
 
 
-def _bill(day: dict, price_map: dict[str, float], days: int) -> float:
+def _bill(day: dict, price_map: dict[str, float], days: int,
+          table: dict | None = None) -> float:
     """Just the total for N days — used to price a week and a month honestly."""
     total = 0.0
     for item in day.get("items", []):
-        q = _quantity(item["key"], item["grams"] * days)
+        q = _quantity(item["key"], item["grams"] * days, table)
         if q:
             total += q["units"] * price_map.get(item["key"], 0.0)
     return total
 
 
 def cost_day(day: dict, prices: dict[str, float] | None = None,
-             *, days: int = 1) -> dict:
+             *, days: int = 1, table: dict | None = None,
+             book: dict | None = None) -> dict:
     """
     Price a built day, and roll it up into a shopping list.
 
     `days` multiplies the quantities so a coach can hand over a week's shopping
     rather than one day's, which is how anyone actually buys food.
     """
-    price_map = {**default_prices(), **(prices or {})}
+    # `table` carries the coach's own foods alongside the shipped ones, so a
+    # custom food is priced exactly like any other rather than falling off the
+    # bill as "unpriced".
+    table = table or PURCHASE
+    price_map = {**{k: v["price"] for k, v in table.items()}, **(prices or {})}
     items, unpriced = [], []
     total = 0.0
 
     for item in day.get("items", []):
         key = item["key"]
-        q = _quantity(key, item["grams"] * days)
+        q = _quantity(key, item["grams"] * days, table)
         if not q:
             # A food with no purchase data is listed, not silently dropped — a
             # missing line in a shopping list is worse than an obvious gap.
@@ -227,7 +234,7 @@ def cost_day(day: dict, prices: dict[str, float] | None = None,
             "key": key,
             "name": item["name"],
             "eat_grams": round(item["grams"] * days),
-            "buy": _display(key, q),
+            "buy": _display(key, q, book),
             "buy_units": q["units"],
             "unit": q["unit"],
             "unit_label": q["unit_label"],
@@ -248,8 +255,8 @@ def cost_day(day: dict, prices: dict[str, float] | None = None,
     # with however many piece-priced foods are in the plan. Recomputing at each
     # horizon costs nothing and means the monthly figure — the one a client
     # actually answers yes or no to — is the one that's right.
-    week = _bill(day, price_map, 7) if days == 1 else None
-    month = _bill(day, price_map, 30) if days == 1 else None
+    week = _bill(day, price_map, 7, table) if days == 1 else None
+    month = _bill(day, price_map, 30, table) if days == 1 else None
 
     return {
         "days": days,

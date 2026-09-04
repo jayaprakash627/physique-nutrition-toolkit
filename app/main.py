@@ -33,7 +33,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import costing, db, engine, intake, security
+from . import catalog, costing, db, engine, intake, security
 from . import formulas as f
 from .knowledge import foods, micronutrients, sources
 from .models import (
@@ -43,6 +43,7 @@ from .models import (
     IntakeIn,
     InviteIn,
     LoginIn,
+    CustomFoodIn,
     MealPlanIn,
     MeasurementIn,
     PriceIn,
@@ -677,6 +678,40 @@ def meal_plan_from_intake(intake_id: int):
 
 
 # ---------------------------------------------------------------------------
+#  COACH: the coach's own foods
+# ---------------------------------------------------------------------------
+
+@app.get("/api/foods/custom", dependencies=[Depends(security.require_coach)])
+def list_custom_foods():
+    """Foods this coach added. The cited knowledge base is returned separately."""
+    return {"foods": db.custom_foods_all()}
+
+
+@app.post("/api/foods/custom", status_code=201,
+          dependencies=[Depends(security.require_coach)])
+def add_custom_food(payload: CustomFoodIn):
+    """
+    Add a food the curated list doesn't carry.
+
+    Stored apart from `app/knowledge/foods.py` and merged in at request time —
+    see catalog.py for why that separation is worth keeping. The macros are
+    validated against the calories before anything is saved, because a mistyped
+    food silently poisons every plan it appears in and every grocery bill derived
+    from one.
+    """
+    existing = {f["key"] for f in db.custom_foods_all()}
+    key = catalog.make_key(payload.name, existing | set(foods.BY_KEY))
+    return db.custom_food_save(catalog.to_record(payload, key))
+
+
+@app.delete("/api/foods/custom/{key}", dependencies=[Depends(security.require_coach)])
+def delete_custom_food(key: str):
+    if not db.custom_food_delete(key):
+        raise HTTPException(404, "No such food")
+    return {"deleted": key}
+
+
+# ---------------------------------------------------------------------------
 #  COACH: grocery prices
 # ---------------------------------------------------------------------------
 
@@ -690,9 +725,11 @@ def list_prices():
     shipped guess that may be wrong for their city.
     """
     overrides = db.prices_get()
+    custom = db.custom_foods_all()
+    book = catalog.by_key(custom)
     rows = []
-    for key, row in costing.PURCHASE.items():
-        food = foods.BY_KEY.get(key)
+    for key, row in catalog.purchase(custom).items():
+        food = book.get(key)
         if not food:
             continue
         rows.append({
@@ -703,6 +740,7 @@ def list_prices():
             "price": overrides.get(key, row["price"]),
             "default_price": row["price"],
             "is_yours": key in overrides,
+            "is_custom": bool(food.get("is_custom")),
         })
     rows.sort(key=lambda r: r["name"])
     return {"prices": rows, "defaults_as_of": costing.PRICES_AS_OF}

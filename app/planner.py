@@ -70,7 +70,7 @@ PRICEY = {"whey", "almonds", "walnuts", "sardines", "mutton", "tofu", "greek_yog
 MAX_PORTIONS = 3
 
 
-def _avoid_set(*texts: str) -> set[str]:
+def _avoid_set(*texts: str, book: dict | None = None) -> set[str]:
     """
     Turn free-text dislikes and allergies into food keys to skip.
 
@@ -85,7 +85,7 @@ def _avoid_set(*texts: str) -> set[str]:
     if not blob.strip():
         return set()
     hits = set()
-    for food in foods.ALL_FOODS:
+    for food in (book or foods.BY_KEY).values():
         name = food["name"].lower()
         key = food["key"].lower()
         words = [w for w in key.split("_") if len(w) > 3] + [name.split(",")[0]]
@@ -94,8 +94,9 @@ def _avoid_set(*texts: str) -> set[str]:
     return hits
 
 
-def _usable(key: str, *, diet: str, budget: str, avoid: set[str]) -> bool:
-    food = foods.BY_KEY.get(key)
+def _usable(key: str, *, diet: str, budget: str, avoid: set[str],
+            book: dict | None = None) -> bool:
+    food = (book or foods.BY_KEY).get(key)
     if not food or key in avoid:
         return False
     if budget == "tight" and key in PRICEY:
@@ -329,7 +330,7 @@ def _limits(kcal: float) -> tuple[float, int]:
     return cap, max_items
 
 
-def _fill(*, targets, running, chosen, diet, budget, avoid,
+def _fill(*, targets, running, chosen, diet, budget, avoid, book,
           cap=MAX_PORTIONS, max_items=14):
     """
     Add one portion at a time, always the portion that improves the plan most.
@@ -347,7 +348,8 @@ def _fill(*, targets, running, chosen, diet, budget, avoid,
     sentence — "add the food that gets us closest" — and because every macro is
     scored on every step, filling one can't silently wreck another.
     """
-    pool = [k for k in _candidates(diet) if _usable(k, diet=diet, budget=budget, avoid=avoid)]
+    pool = [k for k in _candidates(diet, book)
+            if _usable(k, diet=diet, budget=budget, avoid=avoid, book=book)]
     counts: dict[str, float] = {}
 
     # Half a portion at a time, not a whole one. A portion of chicken breast is
@@ -368,7 +370,7 @@ def _fill(*, targets, running, chosen, diet, budget, avoid,
 
         for key in pool:
             have = counts.get(key, 0)
-            food = foods.BY_KEY[key]
+            food = book[key]
 
             if have + STEP <= cap and (have > 0 or len(counts) < max_items):
                 trial = {k: running[k] + food[k] * STEP for k in running}
@@ -386,7 +388,7 @@ def _fill(*, targets, running, chosen, diet, budget, avoid,
             break
 
         key, delta = best_move
-        food = foods.BY_KEY[key]
+        food = book[key]
         counts[key] = round(counts.get(key, 0) + delta, 1)
         for k in running:
             running[k] += food[k] * delta
@@ -399,11 +401,23 @@ def _fill(*, targets, running, chosen, diet, budget, avoid,
     )
 
 
-def _candidates(diet: str) -> list[str]:
-    """Every food the planner may reach for, staples first."""
+def _candidates(diet: str, book: dict | None = None) -> list[str]:
+    """
+    Every food the planner may reach for, staples first.
+
+    The coach's own foods go on the end. Order barely matters — the search picks
+    by how much a portion improves the plan, not by position — but keeping the
+    curated staples first means a plan reaches for dal and rice before anything
+    unusual, which is what makes the output look like food rather than a
+    solution.
+    """
     seen, out = set(), []
     for key in PROTEIN_ROTATION[diet] + VEG_ROTATION + CARB_ROTATION + FAT_ROTATION:
         if key not in seen:
+            seen.add(key)
+            out.append(key)
+    for key, food in (book or {}).items():
+        if food.get("is_custom") and key not in seen:
             seen.add(key)
             out.append(key)
     return out
@@ -411,7 +425,7 @@ def _candidates(diet: str) -> list[str]:
 
 def build_day(*, protein_g, carb_g, fat_g, fibre_g, kcal,
               diet="omnivore", budget="moderate", meals=4,
-              dislikes="", allergies="") -> dict:
+              dislikes="", allergies="", book=None) -> dict:
     """
     Fill the targets with ordinary food, then report honestly how close it landed.
 
@@ -419,19 +433,20 @@ def build_day(*, protein_g, carb_g, fat_g, fibre_g, kcal,
     and every pass subtracts what earlier passes already contributed.
     """
     diet = diet if diet in PROTEIN_ROTATION else "omnivore"
-    avoid = _avoid_set(dislikes, allergies)
+    book = book or foods.BY_KEY
+    avoid = _avoid_set(dislikes, allergies, book=book)
     running = {"protein_g": 0.0, "carb_g": 0.0, "fat_g": 0.0, "fibre_g": 0.0, "kcal": 0.0}
     targets = {"protein_g": protein_g, "carb_g": carb_g, "fat_g": fat_g,
                "fibre_g": fibre_g, "kcal": kcal}
     chosen: list[dict] = []
     cap, max_items = _limits(kcal)
 
-    _fill(targets=targets, running=running, chosen=chosen,
-          diet=diet, budget=budget, avoid=avoid, cap=cap, max_items=max_items)
+    _fill(targets=targets, running=running, chosen=chosen, diet=diet,
+          budget=budget, avoid=avoid, book=book, cap=cap, max_items=max_items)
 
     items = []
     for c in chosen:
-        food = foods.BY_KEY[c["key"]]
+        food = book[c["key"]]
         n = c["portions"]
         items.append({
             "key": c["key"],
@@ -471,7 +486,7 @@ def build_day(*, protein_g, carb_g, fat_g, fibre_g, kcal,
 
     return {
         "items": items,
-        "meals": _split_into_meals(items, meals),
+        "meals": _split_into_meals(items, meals, book),
         "totals": totals,
         "all_close": all(v["close_enough"] for v in totals.values()),
         "check": _diagnose(totals, diet=diet, budget=budget, avoid=avoid),
@@ -582,7 +597,7 @@ def _diagnose(totals: dict, *, diet: str, budget: str, avoid: set[str]) -> list[
     return notes
 
 
-def _split_into_meals(items: list[dict], meals: int) -> list[dict]:
+def _split_into_meals(items: list[dict], meals: int, book: dict | None = None) -> list[dict]:
     """
     Spread the day's food across meals, protein first.
 
@@ -592,7 +607,13 @@ def _split_into_meals(items: list[dict], meals: int) -> list[dict]:
     protein in it is the one people skip or replace with whatever's nearby.
     """
     meals = max(1, min(8, int(meals or 4)))
+    # Curated protein foods, plus any custom food that is protein-led. Without
+    # the second half, a coach's own protein powder would be dealt out last and
+    # meals could end up with none in them.
     protein_keys = {food["key"] for food in foods.PROTEIN_FOODS}
+    for key, food in (book or {}).items():
+        if food.get("is_custom") and food.get("protein_g", 0) >= 6:
+            protein_keys.add(key)
 
     # Split everything back into half-portion units before dealing them out.
     # Handing out whole items instead produced meals of 839 and 157 kcal in the
@@ -654,7 +675,8 @@ def _split_into_meals(items: list[dict], meals: int) -> list[dict]:
 
 
 def plan(inp: dict, *, kcal: float, lbm_kg: float, goal: str,
-         dislikes: str = "", allergies: str = "", budget: str = "moderate") -> dict:
+         dislikes: str = "", allergies: str = "", budget: str = "moderate",
+         book: dict | None = None) -> dict:
     """
     The whole feature: the working, then the food.
 
@@ -675,5 +697,6 @@ def plan(inp: dict, *, kcal: float, lbm_kg: float, goal: str,
         meals=inp.get("meals", 4),
         dislikes=dislikes,
         allergies=allergies,
+        book=book,
     )
     return {"math": math, "day": day}

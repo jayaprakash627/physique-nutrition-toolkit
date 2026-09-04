@@ -17,7 +17,17 @@ pytestmark = pytest.mark.e2e
 
 
 def _build(coach, **fields):
+    """
+    Build a plan and wait for THIS plan, not the last one.
+
+    The result box is emptied first. Without that, waiting for `.mp-step` returns
+    instantly because the previous plan's markup is still on the page, and the
+    assertions then run against stale numbers — which is exactly how a test that
+    re-prices a food and re-builds could report that the cost never moved while
+    the backend was working correctly all along.
+    """
     open_tool(coach, "dietTool")
+    coach.evaluate("document.getElementById('dietResult').innerHTML = ''")
     for sel, val in fields.items():
         if sel.startswith("select:"):
             coach.select_option(f"#{sel[7:]}", val)
@@ -131,27 +141,112 @@ def test_the_cost_table_separates_what_you_eat_from_what_you_buy(coach):
 
 
 def test_changing_a_price_changes_what_the_plan_costs(coach):
-    """The whole point of an editable price list."""
+    """
+    The whole point of an editable price list.
+
+    The food to re-price is read off the plan rather than hardcoded. These tests
+    share one server and database, so an earlier test adding a custom food can
+    change which staples this plan reaches for — pinning it to chicken made the
+    test pass or fail on execution order rather than on the behaviour it checks.
+    """
     box = _build(coach, d_weight="75", d_height="175")
     before = box.locator(".cost-head__value").first.inner_text()
 
+    # The most expensive line, which is guaranteed to move the total.
+    key = box.evaluate("""(el) => {
+      // the cost table is the second-to-last; its first row is the dearest item
+      const tables = el.querySelectorAll('table');
+      const costTable = tables[tables.length - 2];
+      const name = costTable.querySelector('tbody tr .food-row__name').textContent.trim();
+      const match = [...document.querySelectorAll('[data-price-key]')]
+        .find(i => i.closest('tr').textContent.includes(name));
+      return match ? match.dataset.priceKey : null;
+    }""")
+    assert key, "could not find a price field for the plan's dearest food"
+
     open_tool(coach, "pricesTool")
-    coach.wait_for_selector('[data-price-key="chicken_breast"]', timeout=10_000)
-    field = coach.locator('[data-price-key="chicken_breast"]')
-    field.fill("500")
+    field = coach.locator(f'[data-price-key="{key}"]')
+    original = field.input_value()
+    field.fill(str(round(float(original) * 3)))
     field.dispatch_event("change")
-    coach.wait_for_selector('[data-reset-price="chicken_breast"]', timeout=10_000)
+    coach.wait_for_selector(f'[data-reset-price="{key}"]', timeout=10_000)
 
     box = _build(coach, d_weight="75", d_height="175")
     after = box.locator(".cost-head__value").first.inner_text()
     assert after != before, f"monthly cost did not move: {before} -> {after}"
 
     # Put it back, and confirm the reset really restores the shipped default.
-    coach.click('[data-reset-price="chicken_breast"]')
+    coach.click(f'[data-reset-price="{key}"]')
     coach.wait_for_timeout(1000)
-    assert coach.locator('[data-price-key="chicken_breast"]').input_value() == "280"
+    assert coach.locator(f'[data-price-key="{key}"]').input_value() == original
 
 
 def test_the_price_list_is_coach_only(page):
     status = page.evaluate("""async () => (await fetch('/api/prices')).status""")
     assert status in (401, 503), f"grocery prices reachable without a session: {status}"
+
+
+# ===========================================================================
+#  THE COACH'S OWN FOODS
+# ===========================================================================
+
+def _add_food(coach, **over):
+    open_tool(coach, "foodsTool")
+    fields = {
+        "f_name": "Ragi millet", "f_household": "1 katori cooked", "f_portion": "150",
+        "f_kcal": "336", "f_protein": "7.3", "f_carb": "72", "f_fat": "1.3",
+        "f_fibre": "11.5", "f_price": "70", "f_raw": "0.4",
+        **over,
+    }
+    for sel, val in fields.items():
+        coach.fill(f"#{sel}", val)
+    coach.click("#foodForm button[type=submit]")
+
+
+def test_a_coach_can_add_their_own_food(coach):
+    _add_food(coach)
+    coach.wait_for_selector("#customFoodList >> text=Ragi millet", timeout=10_000)
+    # The portion figures are derived from the per-100 g label numbers.
+    assert "504" in coach.locator("#customFoodList").inner_text()
+
+
+def test_a_mistyped_food_is_refused_with_a_readable_message(coach):
+    """
+    The message must be the sentence, not Pydantic's field path.
+
+    "fat_100g: Value error, ..." buries the explanation a coach needs behind an
+    internal field name.
+    """
+    _add_food(coach, f_name="Typo Food", f_kcal="33")
+    coach.wait_for_selector(".toast", timeout=10_000)
+    msg = coach.locator(".toast").inner_text()
+
+    assert "don't add up" in msg
+    assert "f_kcal" not in msg and "100g" not in msg and "Value error" not in msg
+    assert "Typo Food" not in coach.locator("#customFoodList").inner_text()
+
+
+def test_a_custom_food_reaches_the_diet_builder_and_the_bill(coach):
+    _add_food(coach)
+    coach.wait_for_selector("#customFoodList >> text=Ragi millet", timeout=10_000)
+
+    box = _build(coach, d_weight="75", d_height="175",
+                 **{"select:d_diet": "vegetarian"})
+    panel = box.inner_text().lower()
+    assert "ragi" in panel, "the coach's own food never appeared in the plan"
+    # And it is priced rather than dropping off as unpriced.
+    assert "not priced" not in panel
+
+
+def test_a_custom_food_can_be_removed(coach):
+    _add_food(coach, f_name="Temporary Food")
+    coach.wait_for_selector("#customFoodList >> text=Temporary Food", timeout=10_000)
+
+    # Target THIS food's button. Rows are sorted by name, so clicking the first
+    # remove button deletes whichever food happens to sort earliest — which is
+    # usually a different one left behind by an earlier test.
+    coach.once("dialog", lambda d: d.accept())
+    coach.locator("#customFoodList tr", has_text="Temporary Food") \
+         .locator("[data-del-food]").click()
+    coach.wait_for_timeout(1500)
+    assert "Temporary Food" not in coach.locator("#customFoodList").inner_text()

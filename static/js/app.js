@@ -424,7 +424,7 @@ async function refreshCoachState() {
   }
 
   work.hidden = false;
-  await Promise.all([loadClients(), loadInvites(), loadIntakes(), loadPrices()]);
+  await Promise.all([loadClients(), loadInvites(), loadIntakes(), loadPrices(), loadCustomFoods()]);
 }
 
 function showLoginError(msg) {
@@ -805,6 +805,79 @@ function showDietPlan(plan) {
 }
 
 /**
+ * The coach's own foods.
+ *
+ * Kept separate from the built-in list all the way to the screen: those 45 are
+ * cited to IFCT 2017 and USDA, and a coach should always be able to see which
+ * numbers were checked by somebody and which they typed themselves.
+ */
+async function loadCustomFoods() {
+  const box = document.getElementById('customFoodList');
+  try {
+    const { foods } = await API.customFoods();
+    box.innerHTML = Render.customFoodList(foods);
+  } catch (err) {
+    box.innerHTML = `<p class="muted small">Couldn't load your foods: ${esc(err.message)}</p>`;
+  }
+}
+
+async function addCustomFood(e) {
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Checking the numbers…';
+
+  const unit = document.getElementById('f_unit').value;
+  try {
+    await API.addCustomFood({
+      name: document.getElementById('f_name').value.trim(),
+      household: document.getElementById('f_household').value.trim(),
+      portion_grams: numVal('f_portion'),
+      category: document.getElementById('f_category').value,
+      kcal_100g: numVal('f_kcal'),
+      protein_100g: numVal('f_protein'),
+      carb_100g: numVal('f_carb'),
+      fat_100g: numVal('f_fat'),
+      fibre_100g: numVal('f_fibre') ?? 0,
+      unit,
+      price: numVal('f_price'),
+      piece_grams: unit === 'piece' ? numVal('f_piece_grams') : null,
+      raw_factor: numVal('f_raw') ?? 1,
+    });
+    toast('Added — the diet builder can use it now');
+    e.target.reset();
+    document.getElementById('f_pieceField').hidden = true;
+    await Promise.all([loadCustomFoods(), loadPrices()]);
+  } catch (err) {
+    // The server's message names the mistyped number, so show it as-is rather
+    // than replacing it with something vaguer.
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Add this food';
+  }
+}
+
+function wireCustomFoods() {
+  // "One piece weighs" only makes sense when the food is sold by the piece.
+  document.getElementById('f_unit').addEventListener('change', e => {
+    document.getElementById('f_pieceField').hidden = e.target.value !== 'piece';
+  });
+
+  document.getElementById('customFoodList').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-del-food]');
+    if (!btn) return;
+    if (!confirm('Remove this food? Diets already built are unaffected.')) return;
+    try {
+      await API.deleteCustomFood(btn.dataset.delFood);
+      toast('Removed');
+      await Promise.all([loadCustomFoods(), loadPrices()]);
+    } catch (err) { toast(err.message, true); }
+  });
+}
+
+
+/**
  * The coach's own grocery prices.
  *
  * Loaded once when the workspace opens, then saved on change. A price is saved
@@ -903,6 +976,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('inviteForm').addEventListener('submit', createInvite);
   document.getElementById('dietForm').addEventListener('submit', runDietBuilder);
   wirePrices();
+  document.getElementById('foodForm').addEventListener('submit', addCustomFood);
+  wireCustomFoods();
   initClientEvents();
 
   // Buttons that live inside re-rendered markup, handled by delegation.

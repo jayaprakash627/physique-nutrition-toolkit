@@ -1630,6 +1630,50 @@ Object.assign(Render, {
       </div>`;
   },
 
+  /** The coach's own foods, with what they're worth per portion. */
+  customFoodList(list) {
+    if (!list.length) {
+      return `<p class="muted small">
+        Nothing added yet. The built-in list already covers 45 everyday Indian
+        foods — add something here only when it genuinely isn't there.
+      </p>`;
+    }
+    return `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Your food</th><th class="num">One portion</th>
+            <th class="num">kcal</th><th class="num">P</th><th class="num">C</th>
+            <th class="num">F</th><th class="num"></th>
+          </tr></thead>
+          <tbody>
+            ${list.map(f => `
+              <tr>
+                <td>
+                  <span class="food-row__name">${esc(f.name)}</span>
+                  <span class="food-row__portion">
+                    ₹${f.purchase.price} ${esc(f.purchase.unit === 'piece' ? 'each'
+                      : 'per ' + f.purchase.unit)}${
+                      f.purchase.raw_factor !== 1
+                        ? ` · buy ${f.purchase.raw_factor}× what you eat` : ''}
+                  </span>
+                </td>
+                <td class="num">${esc(f.household)}<br />
+                  <span class="small muted">${f.grams} g</span></td>
+                <td class="num strong">${f.kcal}</td>
+                <td class="num">${f.protein_g}</td>
+                <td class="num">${f.carb_g}</td>
+                <td class="num">${f.fat_g}</td>
+                <td class="num">
+                  <button class="btn btn--danger btn--sm" data-del-food="${esc(f.key)}"
+                          title="Remove this food">Remove</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  },
+
   /** The editable price list. */
   priceList(rows, asOf) {
     const body = rows.map(p => `
@@ -1644,11 +1688,13 @@ Object.assign(Render, {
                  aria-label="Price for ${esc(p.name)}" />
         </td>
         <td class="num">
-          ${p.is_yours
-            ? `<button class="btn btn--ghost btn--sm" data-reset-price="${esc(p.key)}"
-                       title="Back to the shipped default of ₹${p.default_price}">yours ·
-                 reset</button>`
-            : `<span class="small muted">default</span>`}
+          ${p.is_custom
+            ? `<span class="chip chip--ok">your food</span>`
+            : p.is_yours
+              ? `<button class="btn btn--ghost btn--sm" data-reset-price="${esc(p.key)}"
+                         title="Back to the shipped default of ₹${p.default_price}">yours ·
+                   reset</button>`
+              : `<span class="small muted">default</span>`}
         </td>
       </tr>`).join('');
 

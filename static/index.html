@@ -16,8 +16,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/static/css/theme.css?v=2.1.0" />
-  <link rel="stylesheet" href="/static/css/app.css?v=2.1.0" />
+  <link rel="stylesheet" href="/static/css/theme.css?v=2.2.1" />
+  <link rel="stylesheet" href="/static/css/app.css?v=2.2.1" />
 </head>
 <body>
 
@@ -598,6 +598,87 @@
         </div>
       </details>
 
+      <!-- The coach's own foods -->
+      <details class="tool" id="foodsTool">
+        <summary>
+          <span class="tool__title">My foods</span>
+          <span class="tool__desc">
+            Add anything the built-in list doesn't have — a millet, a local fish, a brand
+          </span>
+        </summary>
+        <div class="tool__body">
+          <p class="q__hint" style="margin-bottom:var(--sp-4)">
+            Copy the numbers straight off the packet — they're per 100 g on every
+            label in India. I'll work out the portion, check the calories against
+            the protein, carbs and fat, and then the diet builder can use it like
+            any other food. The 45 built-in foods stay separate because their
+            numbers are cited to IFCT&nbsp;2017 and USDA; yours are marked as
+            yours.
+          </p>
+          <form id="foodForm">
+            <div class="row">
+              <label class="minifield"><span>Food name</span>
+                <input type="text" id="f_name" maxlength="60" required
+                       placeholder="e.g. Ragi, Kodo millet, Seer fish" /></label>
+              <label class="minifield"><span>One portion looks like</span>
+                <input type="text" id="f_household" maxlength="60" required
+                       placeholder="e.g. 1 katori, 2 rotis" /></label>
+              <label class="minifield"><span>That portion weighs <em>g</em></span>
+                <input type="number" id="f_portion" min="1" max="2000" step="1"
+                       value="150" required /></label>
+            </div>
+            <div class="field">
+              <label for="f_category">What kind of food</label>
+              <select id="f_category">
+                <option value="plant">Plant — fine for vegans</option>
+                <option value="dairy">Dairy</option>
+                <option value="egg">Egg</option>
+                <option value="meat_fish">Meat or fish</option>
+              </select>
+            </div>
+            <p class="q__hint"><strong>Per 100 g</strong>, from the label:</p>
+            <div class="row">
+              <label class="minifield"><span>Calories</span>
+                <input type="number" id="f_kcal" min="0" max="900" step="1" required /></label>
+              <label class="minifield"><span>Protein <em>g</em></span>
+                <input type="number" id="f_protein" min="0" max="100" step="0.1" required /></label>
+              <label class="minifield"><span>Carbs <em>g</em></span>
+                <input type="number" id="f_carb" min="0" max="100" step="0.1" required /></label>
+            </div>
+            <div class="row">
+              <label class="minifield"><span>Fat <em>g</em></span>
+                <input type="number" id="f_fat" min="0" max="100" step="0.1" required /></label>
+              <label class="minifield"><span>Fibre <em>g</em></span>
+                <input type="number" id="f_fibre" min="0" max="100" step="0.1" value="0" /></label>
+            </div>
+            <p class="q__hint"><strong>How you buy it:</strong></p>
+            <div class="row">
+              <label class="minifield"><span>Sold by</span>
+                <select id="f_unit">
+                  <option value="kg">Kilogram</option>
+                  <option value="litre">Litre</option>
+                  <option value="piece">The piece</option>
+                </select></label>
+              <label class="minifield"><span>Price <em>₹ per unit</em></span>
+                <input type="number" id="f_price" min="0.5" max="100000" step="0.5" required /></label>
+              <label class="minifield" id="f_pieceField" hidden><span>One piece weighs <em>g</em></span>
+                <input type="number" id="f_piece_grams" min="1" max="5000" step="1" /></label>
+            </div>
+            <label class="minifield" style="max-width:22rem">
+              <span>Buying multiplier <em>usually leave at 1</em></span>
+              <input type="number" id="f_raw" min="0.1" max="5" step="0.05" value="1" />
+            </label>
+            <p class="q__hint">
+              Only change that if the weight you eat isn't the weight you buy —
+              raw rice is about <strong>0.4</strong> of its cooked weight, raw
+              chicken about <strong>1.4</strong>.
+            </p>
+            <button type="submit" class="btn btn--primary">Add this food</button>
+          </form>
+          <div id="customFoodList" style="margin-top:var(--sp-5)"></div>
+        </div>
+      </details>
+
       <!-- Grocery prices -->
       <details class="tool" id="pricesTool">
         <summary>
@@ -674,9 +755,9 @@
   </p>
 </footer>
 
-<script src="/static/js/api.js?v=2.1.0"></script>
-<script src="/static/js/charts.js?v=2.1.0"></script>
-<script src="/static/js/render.js?v=2.1.0"></script>
-<script src="/static/js/app.js?v=2.1.0"></script>
+<script src="/static/js/api.js?v=2.2.1"></script>
+<script src="/static/js/charts.js?v=2.2.1"></script>
+<script src="/static/js/render.js?v=2.2.1"></script>
+<script src="/static/js/app.js?v=2.2.1"></script>
 </body>
 </html>

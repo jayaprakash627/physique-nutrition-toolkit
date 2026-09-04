@@ -403,7 +403,7 @@ pip install -r requirements-dev.txt && pytest -q
 The suite sets its own `COACH_PASSWORD` and a temp database, so it needs no setup
 and never touches your real data.
 
-330 tests covering every formula against its published value, the safety
+346 tests covering every formula against its published value, the safety
 guardrails, knowledge-base integrity (every citation resolves, every nutrient is
 complete), the plain-language summary for every goal — including a check that no
 internal enum like `aggressive_cut` reaches text a person reads — the API
@@ -456,15 +456,48 @@ and the output always says when the shipped prices were last checked. A cost
 estimate that hides its assumptions is worse than none, because it gets quoted to
 a client.
 
+### Adding your own foods
+
+The built-in list is 45 everyday Indian foods, and it will not have your ragi,
+your local fish, or the protein powder you actually buy. **My foods** in Coach
+mode takes the numbers straight off the packet — per 100 g, which is how every
+label in the country is written — works out the portion, and hands the food to
+the diet builder and the grocery bill like any other.
+
+It refuses a mistyped one. Protein and carbohydrate carry 4 kcal per gram and fat
+9, so the three imply a calorie total; if what was typed disagrees badly,
+something was mistyped:
+
+> These don't add up: 7.3 g protein + 72 g carbs + 1.3 g fat works out to about
+> 329 kcal, but you typed 33. Protein and carbs are 4 kcal per gram, fat is 9.
+> One of the four numbers is probably mistyped.
+
+The tolerance is wide on purpose — labels round, fibre is counted differently by
+different manufacturers, sugar alcohols don't carry 4 kcal — so a small
+disagreement passes and a stray zero doesn't. It is the only cheap place to catch
+that: a wrong food silently poisons every plan it appears in and every grocery
+bill derived from one, and nothing downstream would look wrong.
+
+**Your foods are deliberately kept out of `app/knowledge/foods.py`.** That file
+is cited to IFCT 2017 and USDA and carries a promise that a dietitian can verify
+every number in it without reading application code. Writing unverified entries
+into it would end that promise quietly, leaving checked and unchecked numbers
+side by side with nothing to tell them apart. So custom foods are a database
+table, merged in at request time by `catalog.py`, and labelled as yours wherever
+they appear. They also make no micronutrient claims — the curated entries list
+only nutrients a food is a genuinely good source of, from a published table, and
+inviting a coach to assert that from memory would put guesses into the panel that
+tells a vegan where to get B12.
+
 ### Browser tests
 
 ```bash
 playwright install chromium     # one-off
-pytest -m e2e                   # 23 tests, a real browser, a real server
+pytest -m e2e                   # 27 tests, a real browser, a real server
 pytest -m e2e --headed          # watch them happen
 ```
 
-Kept out of the default run on purpose: `pytest` alone stays at 330 tests needing
+Kept out of the default run on purpose: `pytest` alone stays at 346 tests needing
 nothing but Python and a temp file, so a fresh clone is one command from green.
 The browser suite boots the app on a free port with its own throwaway database —
 it cannot touch real data, and it forces `DATABASE_URL` empty so running it with
@@ -509,7 +542,7 @@ removed.
 | Auth | stdlib `secrets` | Server-side sessions, constant-time compare, rate-limited login — no dependency |
 | Frontend | Plain HTML/CSS/JS | No framework, no build step — clone and run |
 | Charts | Hand-rolled Canvas | ~250 lines, DPR-aware, theme-reactive; no chart library |
-| Tests | pytest + Playwright | 330 fast tests (no network, nothing beyond a temp DB) + 23 opt-in browser tests |
+| Tests | pytest + Playwright | 346 fast tests (no network, nothing beyond a temp DB) + 27 opt-in browser tests |
 
 ### Layout
 
@@ -525,6 +558,7 @@ app/
 ├── intake.py       the onboarding questionnaire + personalised priorities
 ├── planner.py      the diet builder: the shown working, then a day of food
 ├── costing.py      what a day costs to buy — units, raw vs cooked, prices
+├── catalog.py      the cited food list + the coach's own, merged per request
 ├── db.py           storage: clients, measurements, reports, invites, intakes,
 │                   sessions. Postgres when DATABASE_URL is set, SQLite when not
 └── knowledge/      ← the nutrition content, deliberately separated
@@ -783,6 +817,9 @@ clearly marked as not recommended, with the flags leading.
 | `POST` | `/api/intakes/{id}/convert` | Turn it into a tracked client |
 | `POST` | `/api/intakes/{id}/meal-plan` | **Build a diet from their answers** |
 | `POST` | `/api/meal-plan` | **Build a diet from typed-in numbers** |
+| `GET` | `/api/foods/custom` | Foods you added |
+| `POST` | `/api/foods/custom` | **Add a food** — validated against 4/4/9 |
+| `DELETE` | `/api/foods/custom/{key}` | Remove one |
 | `GET` | `/api/prices` | Grocery prices — yours and the defaults |
 | `PUT` | `/api/prices/{food}` | Set what a food costs you |
 | `DELETE` | `/api/prices/{food}` | Back to the shipped default |

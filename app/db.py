@@ -21,7 +21,7 @@ Postgres before trusting a release:
 
     DATABASE_URL="postgresql://..." .venv/bin/python -m pytest
 
-Seven tables:
+Eight tables:
     clients       one row per person the coach tracks
     measurements  many rows per client, one per weigh-in — this is the time series
     reports       saved assessment snapshots, stored as JSON
@@ -29,6 +29,7 @@ Seven tables:
     intakes       submitted onboarding questionnaires, stored as JSON
     sessions      coach logins, stored as a hash of the token — see security.py
     prices        the coach's grocery prices, where they differ from the defaults
+    custom_foods  foods the coach added — kept out of the cited knowledge base
 
 `reports` stores the whole response as a JSON blob rather than normalising it
 into columns. That's deliberate: the report shape includes long-form explanation
@@ -164,6 +165,23 @@ SCHEMA: tuple[str, ...] = (
       created_at TEXT,
       expires_at TEXT
     )""",
+    # Foods the coach added themselves — a millet the curated list doesn't carry,
+    # a regional fish, a specific brand of protein powder.
+    #
+    # Deliberately a TABLE and not an addition to app/knowledge/foods.py. That
+    # file is curated, cited to IFCT 2017 and USDA, and carries a promise that a
+    # dietitian can verify every number in it without reading application code.
+    # Letting the app write unverified rows into it would quietly end that
+    # promise, and nothing on screen would show which numbers had been checked
+    # and which someone typed in a hurry. So custom foods live here, are merged
+    # in at request time, and are labelled as the coach's own wherever they show.
+    """
+    CREATE TABLE IF NOT EXISTS custom_foods (
+      key        TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      payload    TEXT NOT NULL,
+      created_at TEXT
+    )""",
     # The coach's own grocery prices, overriding the defaults in costing.py.
     # Only the ones they actually changed are stored, so a default that gets
     # updated in a later release still reaches every coach who never touched it —
@@ -186,7 +204,7 @@ SCHEMA: tuple[str, ...] = (
 # checking one table, so adding a table to SCHEMA above is enough to have it
 # created on databases that already exist.
 EXPECTED_TABLES = {"clients", "measurements", "reports", "invites", "intakes",
-                   "sessions", "prices"}
+                   "sessions", "prices", "custom_foods"}
 
 MEASUREMENT_COLS = [
     "taken_on", "weight_kg", "bodyfat_pct", "waist_cm", "neck_cm",
@@ -827,3 +845,34 @@ def prices_reset(food_key: str | None = None) -> int:
         if food_key is None:
             return c.run("DELETE FROM prices")
         return c.run("DELETE FROM prices WHERE food_key = ?", (food_key,))
+
+
+# ---------------------------------------------------------------------------
+#  The coach's own foods
+# ---------------------------------------------------------------------------
+#
+# Stored as one JSON blob per food for the same reason `reports` and `intakes`
+# are: the shape will keep growing as the planner learns to use more of it, and a
+# column per field would mean a migration every time. There is no querying to do
+# here — the whole set is small and is read in one go on every plan.
+
+def custom_foods_all() -> list[dict]:
+    with db() as c:
+        rows = c.query("SELECT payload FROM custom_foods ORDER BY name")
+    return [json.loads(r["payload"]) for r in rows]
+
+
+def custom_food_save(food: dict) -> dict:
+    """Insert or replace one custom food. Delete-then-insert, per prices_set."""
+    with db() as c:
+        c.run("DELETE FROM custom_foods WHERE key = ?", (food["key"],))
+        c.run(
+            "INSERT INTO custom_foods (key, name, payload, created_at) VALUES (?, ?, ?, ?)",
+            (food["key"], food["name"], json.dumps(food), _now()),
+        )
+    return food
+
+
+def custom_food_delete(key: str) -> bool:
+    with db() as c:
+        return c.run("DELETE FROM custom_foods WHERE key = ?", (key,)) > 0

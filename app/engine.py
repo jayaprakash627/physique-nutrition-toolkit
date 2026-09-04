@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from . import db
 from . import formulas as f
-from . import costing, planner, safety
+from . import catalog, costing, planner, safety
 from .knowledge import explanations as ex
 from .knowledge import foods, micronutrients, sources
 
@@ -974,9 +974,14 @@ def meal_plan_report(inp: dict, *, budget: str = "moderate",
     kcal = energy["targets"][goal_key]["kcal"]
     macro_goal = "cut" if goal_key in ("cut", "aggressive_cut") else goal_key
 
+    # The coach's own foods are merged in for this calculation only — the cited
+    # knowledge base is never written to. See catalog.py.
+    custom = db.custom_foods_all()
+    book = catalog.by_key(custom)
+
     built = planner.plan(
         inp, kcal=kcal, lbm_kg=lbm, goal=macro_goal,
-        budget=budget, dislikes=dislikes, allergies=allergies,
+        budget=budget, dislikes=dislikes, allergies=allergies, book=book,
     )
 
     # The safety layer still runs. A meal plan that hits its macros perfectly is
@@ -995,7 +1000,12 @@ def meal_plan_report(inp: dict, *, budget: str = "moderate",
     # plan that can't be afforded is abandoned in week three no matter how good
     # the macros are, so the cost travels with the plan rather than sitting
     # behind another button.
-    cost = costing.cost_day(built["day"], db.prices_get())
+    cost = costing.cost_day(
+        built["day"],
+        {**catalog.custom_prices(custom), **db.prices_get()},
+        table=catalog.purchase(custom),
+        book=book,
+    )
 
     return {
         "input": {
